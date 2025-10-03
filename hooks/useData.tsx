@@ -1,6 +1,7 @@
 import React, { createContext, useState, useContext, ReactNode, useCallback, useEffect, useMemo } from 'react';
-import { Product, Sale, KdsOrder, KdsOrderStatus, Category, Unit, BilliardTable, Session, PricelistPackage, TableStatus, SessionStatus, FnbOrderItem, Outlet, RoundingMethod, PricingUnit, Shift, CashMovement, ShiftStatus, CashMovementType, User, PaymentMethod } from '../types';
-import { PRODUCTS, initialSales, CATEGORIES, UNITS, BILLIARD_TABLES, PRICELIST_PACKAGES, OUTLETS, initialShifts, initialCashMovements } from '../constants';
+import { Product, Sale, KdsOrder, KdsOrderStatus, Category, Unit, BilliardTable, Session, PricelistPackage, TableStatus, SessionStatus, FnbOrderItem, Outlet, RoundingMethod, PricingUnit, Shift, CashMovement, ShiftStatus, CashMovementType, User, PaymentMethod, SaleStatus, AuditLog, AuditLogAction } from '../types';
+import { PRODUCTS, initialSales, CATEGORIES, UNITS, BILLIARD_TABLES, PRICELIST_PACKAGES, OUTLETS, initialShifts, initialCashMovements, initialAuditLogs } from '../constants';
+import { useAuth } from './useAuth';
 
 interface DataContextType {
   products: Product[];
@@ -9,7 +10,8 @@ interface DataContextType {
   categories: Category[];
   units: Unit[];
   outlet: Outlet;
-  addSale: (saleData: Omit<Sale, 'id' | 'invoiceNo' | 'date' | 'shiftId'>) => Sale;
+  addSale: (saleData: Omit<Sale, 'id' | 'invoiceNo' | 'date' | 'shiftId' | 'status'>) => Sale;
+  voidSale: (saleId: string, reason: string) => void;
   updateKdsOrderStatus: (orderId: string, status: KdsOrderStatus) => void;
   updateKdsItemStatus: (orderId: string, itemId: string, status: KdsOrderStatus) => void;
   getProductById: (id: string) => Product | undefined;
@@ -43,11 +45,13 @@ interface DataContextType {
   shifts: Shift[];
   cashMovements: CashMovement[];
   activeShift: Shift | null;
-  startShift: (user: User, startCash: number) => Shift;
+  startShift: (startCash: number) => Shift;
   endShift: (endCash: number, notes: string) => Shift;
   addCashMovement: (type: CashMovementType, amount: number, notes: string) => void;
   getShiftCashMovements: (shiftId: string) => CashMovement[];
   getShiftSales: (shiftId: string) => Sale[];
+  // Audit Logs
+  auditLogs: AuditLog[];
 }
 
 const DataContext = createContext<DataContextType | undefined>(undefined);
@@ -116,6 +120,8 @@ const calculateSessionBill = (session: Session, currentTime: number): Partial<Se
 
 
 export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
+  const { user } = useAuth();
+
   const [products, setProducts] = useState<Product[]>(PRODUCTS);
   const [sales, setSales] = useState<Sale[]>(initialSales);
   const [kdsOrders, setKdsOrders] = useState<KdsOrder[]>([]);
@@ -129,6 +135,25 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   // Shift State
   const [shifts, setShifts] = useState<Shift[]>(initialShifts);
   const [cashMovements, setCashMovements] = useState<CashMovement[]>(initialCashMovements);
+  // Audit Log State
+  const [auditLogs, setAuditLogs] = useState<AuditLog[]>(initialAuditLogs);
+
+  const formatCurrency = (amount: number) => new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR' }).format(amount);
+
+  const addAuditLog = useCallback((action: AuditLogAction, details: string, entityId?: string) => {
+    if (!user) return;
+    const newLog: AuditLog = {
+      id: `log-${Date.now()}`,
+      timestamp: Date.now(),
+      userId: user.id,
+      userName: user.name,
+      action,
+      details,
+      entityId,
+    };
+    setAuditLogs(prev => [newLog, ...prev]);
+  }, [user]);
+
 
   // Billiard Real-time Update Timer
   useEffect(() => {
@@ -193,8 +218,9 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
 
     const newProduct: Product = { ...productData, id: `prod-${Date.now()}` };
     setProducts(prev => [...prev, newProduct]);
+    addAuditLog(AuditLogAction.PRODUCT_CREATE, `Created product: ${newProduct.name} (SKU: ${newProduct.sku})`, newProduct.id);
     return { success: true };
-  }, [products, categories, units]);
+  }, [products, categories, units, addAuditLog]);
 
   const updateProduct = useCallback((updatedProduct: Product): { success: boolean, message?: string } => {
     if (products.some(p => p.id !== updatedProduct.id && p.sku.toLowerCase() === updatedProduct.sku.toLowerCase())) {
@@ -208,33 +234,61 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     }
     
     setProducts(prev => prev.map(p => p.id === updatedProduct.id ? updatedProduct : p));
+    addAuditLog(AuditLogAction.PRODUCT_UPDATE, `Updated product: ${updatedProduct.name} (SKU: ${updatedProduct.sku})`, updatedProduct.id);
     return { success: true };
-  }, [products]);
+  }, [products, addAuditLog]);
 
-  const addCategory = useCallback((name: string) => setCategories(prev => [...prev, { id: `cat-${Date.now()}`, name }]), []);
-  const updateCategory = useCallback((id: string, name: string) => setCategories(prev => prev.map(cat => cat.id === id ? { ...cat, name } : cat)), []);
+  const addCategory = useCallback((name: string) => {
+      const newCategory = { id: `cat-${Date.now()}`, name };
+      setCategories(prev => [...prev, newCategory]);
+      addAuditLog(AuditLogAction.CATEGORY_CREATE, `Created category: ${name}`, newCategory.id);
+  }, [addAuditLog]);
+  
+  const updateCategory = useCallback((id: string, name: string) => {
+      setCategories(prev => prev.map(cat => cat.id === id ? { ...cat, name } : cat));
+      addAuditLog(AuditLogAction.CATEGORY_UPDATE, `Updated category to name: ${name}`, id);
+  }, [addAuditLog]);
+  
   const deleteCategory = useCallback((id: string): { success: boolean, message?: string } => {
       if (products.some(p => p.categoryId === id)) return { success: false, message: 'Cannot delete category in use.' };
-      setCategories(prev => prev.filter(cat => cat.id !== id));
+      const categoryToDelete = categories.find(c => c.id === id);
+      if (categoryToDelete) {
+        setCategories(prev => prev.filter(cat => cat.id !== id));
+        addAuditLog(AuditLogAction.CATEGORY_DELETE, `Deleted category: ${categoryToDelete.name}`, id);
+      }
       return { success: true };
-  }, [products]);
-  const addUnit = useCallback((name: string, precision: number) => setUnits(prev => [...prev, { id: `unit-${Date.now()}`, name, precision }]), []);
-  const updateUnit = useCallback((id: string, name: string, precision: number) => setUnits(prev => prev.map(u => u.id === id ? { ...u, name, precision } : u)), []);
+  }, [products, categories, addAuditLog]);
+  
+  const addUnit = useCallback((name: string, precision: number) => {
+      const newUnit = { id: `unit-${Date.now()}`, name, precision };
+      setUnits(prev => [...prev, newUnit]);
+      addAuditLog(AuditLogAction.UNIT_CREATE, `Created unit: ${name}`, newUnit.id);
+  }, [addAuditLog]);
+  
+  const updateUnit = useCallback((id: string, name: string, precision: number) => {
+      setUnits(prev => prev.map(u => u.id === id ? { ...u, name, precision } : u));
+      addAuditLog(AuditLogAction.UNIT_UPDATE, `Updated unit to name: ${name}`, id);
+  }, [addAuditLog]);
+
   const deleteUnit = useCallback((id: string): { success: boolean, message?: string } => {
       if (products.some(p => p.unitId === id)) return { success: false, message: 'Cannot delete unit in use.' };
-      setUnits(prev => prev.filter(u => u.id !== id));
+      const unitToDelete = units.find(u => u.id === id);
+      if (unitToDelete) {
+        setUnits(prev => prev.filter(u => u.id !== id));
+        addAuditLog(AuditLogAction.UNIT_DELETE, `Deleted unit: ${unitToDelete.name}`, id);
+      }
       return { success: true };
-  }, [products]);
+  }, [products, units, addAuditLog]);
 
   const updateOutlet = useCallback((updatedData: Partial<Outlet>) => {
     setOutlet(prev => ({...prev, ...updatedData}));
   }, []);
 
-  const addSale = useCallback((saleData: Omit<Sale, 'id' | 'invoiceNo' | 'date' | 'shiftId'>): Sale => {
+  const addSale = useCallback((saleData: Omit<Sale, 'id' | 'invoiceNo' | 'date' | 'shiftId' | 'status'>): Sale => {
     if (!activeShift) {
         throw new Error("Cannot make a sale without an active shift.");
     }
-    const newSale: Sale = { ...saleData, id: `sale-${Date.now()}`, invoiceNo: `INV-${String(sales.length + 1).padStart(4, '0')}`, date: new Date().toISOString(), shiftId: activeShift.id };
+    const newSale: Sale = { ...saleData, id: `sale-${Date.now()}`, invoiceNo: `INV-${String(sales.length + 1).padStart(4, '0')}`, date: new Date().toISOString(), shiftId: activeShift.id, status: SaleStatus.COMPLETED };
     setSales(prev => [...prev, newSale]);
     setProducts(prevProducts => {
       const newProducts = [...prevProducts];
@@ -254,6 +308,31 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     }
     return newSale;
   }, [sales, getProductById, activeShift]);
+  
+  const voidSale = useCallback((saleId: string, reason: string) => {
+    const saleToVoid = sales.find(s => s.id === saleId);
+    if (!saleToVoid || saleToVoid.status !== SaleStatus.COMPLETED) {
+        throw new Error("Sale cannot be voided.");
+    }
+
+    setSales(prev => prev.map(s => s.id === saleId ? { ...s, status: SaleStatus.VOIDED, notes: `Voided: ${reason}` } : s));
+    
+    // Add stock back
+    setProducts(prevProducts => {
+        const newProducts = [...prevProducts];
+        saleToVoid.items.forEach(item => {
+            const productIndex = newProducts.findIndex(p => p.id === item.productId);
+            if (productIndex !== -1) {
+                newProducts[productIndex].stock += item.qty;
+            }
+        });
+        return newProducts;
+    });
+
+    addAuditLog(AuditLogAction.SALE_VOID, `Voided sale ${saleToVoid.invoiceNo}. Reason: ${reason}`, saleId);
+
+}, [sales, addAuditLog]);
+
 
   const updateKdsOrderStatus = useCallback((orderId: string, status: KdsOrderStatus) => setKdsOrders(prev => prev.map(o => o.id === orderId ? { ...o, status, items: o.items.map(i => ({...i, status})) } : o)), []);
   const updateKdsItemStatus = useCallback((orderId: string, itemId: string, status: KdsOrderStatus) => {
@@ -379,10 +458,12 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   }, []);
 
   // --- Shift Functions ---
-  const startShift = useCallback((user: User, startCash: number): Shift => {
+  const startShift = useCallback((startCash: number): Shift => {
     if (activeShift) {
         throw new Error("Another shift is already active.");
     }
+    if (!user) { throw new Error("User not found to start shift."); }
+
     const newShift: Shift = {
         id: `shift-${Date.now()}`,
         outletId: user.outletId || 'outlet-1',
@@ -400,8 +481,9 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         expectedCash: startCash,
     };
     setShifts(prev => [...prev, newShift]);
+    addAuditLog(AuditLogAction.SHIFT_START, `Shift started. Opening cash: ${formatCurrency(startCash)}.`, newShift.id);
     return newShift;
-  }, [activeShift]);
+  }, [activeShift, user, addAuditLog]);
   
   const endShift = useCallback((endCash: number, notes: string): Shift => {
     if (!activeShift) {
@@ -416,8 +498,9 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         difference: endCash - activeShift.expectedCash,
     };
     setShifts(prev => prev.map(s => s.id === activeShift.id ? finalShiftState : s));
+    addAuditLog(AuditLogAction.SHIFT_END, `Shift ended. Expected: ${formatCurrency(activeShift.expectedCash)}, Counted: ${formatCurrency(endCash)}, Difference: ${formatCurrency(finalShiftState.difference || 0)}. Notes: "${notes || 'N/A'}"`, activeShift.id);
     return finalShiftState;
-  }, [activeShift]);
+  }, [activeShift, addAuditLog]);
   
   const addCashMovement = useCallback((type: CashMovementType, amount: number, notes: string) => {
     if (!activeShift) {
@@ -444,7 +527,7 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
 
 
   return (
-    <DataContext.Provider value={{ products, sales, kdsOrders, categories, units, outlet, addSale, updateKdsOrderStatus, updateKdsItemStatus, getProductById, getCategoryById, getUnitById, addProduct, updateProduct, addCategory, updateCategory, deleteCategory, addUnit, updateUnit, deleteUnit, updateOutlet, billiardTables, sessions, pricelistPackages, addPricelistPackage, updatePricelistPackage, deletePricelistPackage, addBilliardTable, updateBilliardTable, deleteBilliardTable, startBilliardSession, pauseBilliardSession, resumeBilliardSession, stopBilliardSession, addFnbToSession, shifts, cashMovements, activeShift, startShift, endShift, addCashMovement, getShiftCashMovements, getShiftSales }}>
+    <DataContext.Provider value={{ products, sales, kdsOrders, categories, units, outlet, addSale, voidSale, updateKdsOrderStatus, updateKdsItemStatus, getProductById, getCategoryById, getUnitById, addProduct, updateProduct, addCategory, updateCategory, deleteCategory, addUnit, updateUnit, deleteUnit, updateOutlet, billiardTables, sessions, pricelistPackages, addPricelistPackage, updatePricelistPackage, deletePricelistPackage, addBilliardTable, updateBilliardTable, deleteBilliardTable, startBilliardSession, pauseBilliardSession, resumeBilliardSession, stopBilliardSession, addFnbToSession, shifts, cashMovements, activeShift, startShift, endShift, addCashMovement, getShiftCashMovements, getShiftSales, auditLogs }}>
       {children}
     </DataContext.Provider>
   );

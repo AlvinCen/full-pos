@@ -8,11 +8,32 @@ import { Input } from '../components/ui/Input';
 import { Button } from '../components/ui/Button';
 import { PlusIcon, MinusIcon, TrashIcon } from '../components/icons/Icons';
 import Receipt from '../components/Receipt';
+import { Switch } from '../components/ui/Switch';
 
 interface CartItem extends SaleItem {
     product: Product;
     discountInput: string;
 }
+
+const calculateDiscount = (price: number, qty: number, discountInput: string): number => {
+    let calculatedDiscount = 0;
+    const itemTotal = price * qty;
+    const value = discountInput.trim();
+
+    if (value.endsWith('%')) {
+        const percentage = parseFloat(value.slice(0, -1));
+        if (!isNaN(percentage)) {
+            calculatedDiscount = (itemTotal * percentage) / 100;
+        }
+    } else {
+        const amount = parseFloat(value);
+        if (!isNaN(amount)) {
+            calculatedDiscount = amount;
+        }
+    }
+
+    return Math.max(0, Math.min(calculatedDiscount, itemTotal));
+};
 
 const PosPage: React.FC = () => {
     const { products, addSale, outlet, activeShift } = useData();
@@ -25,6 +46,7 @@ const PosPage: React.FC = () => {
     const [showPaymentModal, setShowPaymentModal] = useState(false);
     const [lastSale, setLastSale] = useState<Sale | null>(null);
     const [showReceipt, setShowReceipt] = useState(false);
+    const [isTaxExempt, setIsTaxExempt] = useState(false);
     
     const barcodeInputRef = useRef<HTMLInputElement>(null);
 
@@ -46,8 +68,9 @@ const PosPage: React.FC = () => {
         setCart(prevCart => {
             const existingItem = prevCart.find(item => item.productId === product.id);
             if (existingItem) {
+                const newQty = existingItem.qty + 1;
                 return prevCart.map(item =>
-                    item.productId === product.id ? { ...item, qty: item.qty + 1 } : item
+                    item.productId === product.id ? { ...item, qty: newQty, discount: calculateDiscount(item.price, newQty, item.discountInput) } : item
                 );
             } else {
                 return [...prevCart, { id: `si-${Date.now()}`, saleId: '', productId: product.id, qty: 1, price: product.price, discount: 0, discountInput: '', product }];
@@ -61,7 +84,9 @@ const PosPage: React.FC = () => {
                 return prevCart.filter(item => item.productId !== productId);
             }
             return prevCart.map(item =>
-                item.productId === productId ? { ...item, qty: newQty } : item
+                item.productId === productId 
+                ? { ...item, qty: newQty, discount: calculateDiscount(item.price, newQty, item.discountInput) } 
+                : item
             );
         });
     };
@@ -70,24 +95,8 @@ const PosPage: React.FC = () => {
         setCart(prevCart => {
             return prevCart.map(item => {
                 if (item.productId === productId) {
-                    let calculatedDiscount = 0;
-                    const itemTotal = item.price * item.qty;
-    
-                    if (value.endsWith('%')) {
-                        const percentage = parseFloat(value.slice(0, -1));
-                        if (!isNaN(percentage)) {
-                            calculatedDiscount = (itemTotal * percentage) / 100;
-                        }
-                    } else {
-                        const amount = parseFloat(value);
-                        if (!isNaN(amount)) {
-                            calculatedDiscount = amount;
-                        }
-                    }
-    
-                    calculatedDiscount = Math.max(0, Math.min(calculatedDiscount, itemTotal));
-    
-                    return { ...item, discountInput: value, discount: calculatedDiscount };
+                    const newDiscount = calculateDiscount(item.price, item.qty, value);
+                    return { ...item, discountInput: value, discount: newDiscount };
                 }
                 return item;
             });
@@ -114,7 +123,10 @@ const PosPage: React.FC = () => {
     const subtotal = useMemo(() => cart.reduce((acc, item) => acc + item.price * item.qty, 0), [cart]);
     const totalDiscount = useMemo(() => cart.reduce((acc, item) => acc + item.discount, 0), [cart]);
     const taxableAmount = useMemo(() => subtotal - totalDiscount, [subtotal, totalDiscount]);
-    const tax = useMemo(() => taxableAmount * (outlet.taxPercent / 100), [taxableAmount, outlet.taxPercent]);
+    const tax = useMemo(() => {
+        if (isTaxExempt) return 0;
+        return taxableAmount * (outlet.taxPercent / 100);
+    }, [taxableAmount, outlet.taxPercent, isTaxExempt]);
     const total = useMemo(() => taxableAmount + tax, [taxableAmount, tax]);
     const change = useMemo(() => amountPaid - total, [amountPaid, total]);
 
@@ -139,6 +151,7 @@ const PosPage: React.FC = () => {
         setShowPaymentModal(false);
         setCart([]);
         setAmountPaid(0);
+        setIsTaxExempt(false);
         setShowReceipt(true);
     };
 
@@ -244,8 +257,19 @@ const PosPage: React.FC = () => {
                     <div className="p-4 border-t border-slate-800 space-y-2">
                          <div className="flex justify-between text-sm"><span>Subtotal</span><span>{formatCurrency(subtotal)}</span></div>
                          <div className="flex justify-between text-sm text-red-400"><span>Discount</span><span>- {formatCurrency(totalDiscount)}</span></div>
-                         <div className="flex justify-between text-sm"><span>Tax ({outlet.taxPercent}%)</span><span>{formatCurrency(tax)}</span></div>
-                         <div className="flex justify-between font-bold text-lg text-white"><span>Total</span><span>{formatCurrency(total)}</span></div>
+                         <div className="flex justify-between text-sm">
+                            <span>Tax ({!isTaxExempt ? `${outlet.taxPercent}%` : 'Exempt'})</span>
+                            <span>{formatCurrency(tax)}</span>
+                         </div>
+                         <div className="flex justify-start items-center gap-2 pt-1">
+                            <Switch
+                                id="tax-exempt"
+                                checked={isTaxExempt}
+                                onChange={setIsTaxExempt}
+                            />
+                            <label htmlFor="tax-exempt" className="text-sm text-slate-400 cursor-pointer">Mark as tax-exempt</label>
+                         </div>
+                         <div className="flex justify-between font-bold text-lg text-white border-t border-slate-800 mt-2 pt-2"><span>Total</span><span>{formatCurrency(total)}</span></div>
                          <Button className="w-full mt-4" size="lg" disabled={cart.length === 0} onClick={() => setShowPaymentModal(true)}>
                             Pay
                          </Button>

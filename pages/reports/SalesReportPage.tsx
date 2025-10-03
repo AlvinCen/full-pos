@@ -1,21 +1,68 @@
 import React, { useMemo, useState } from 'react';
 import { useData } from '../../hooks/useData';
-import { Card, CardHeader, CardTitle, CardContent } from '../../components/ui/Card';
+import { Card, CardHeader, CardTitle, CardContent, CardFooter } from '../../components/ui/Card';
 import { Input } from '../../components/ui/Input';
 import BarChart from '../../components/BarChart';
 import { Button } from '../../components/ui/Button';
+import { Sale, SaleStatus } from '../../types';
+
+const VoidSaleModal: React.FC<{
+  sale: Sale;
+  onClose: () => void;
+  onConfirm: (reason: string) => void;
+}> = ({ sale, onClose, onConfirm }) => {
+  const [reason, setReason] = useState('');
+
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (reason.trim()) {
+      onConfirm(reason.trim());
+    } else {
+      alert("A reason is required to void a sale.");
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 bg-black bg-opacity-70 flex items-center justify-center z-50 p-4">
+      <Card className="w-full max-w-md">
+        <form onSubmit={handleSubmit}>
+          <CardHeader>
+            <CardTitle>Void Sale {sale.invoiceNo}</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <label htmlFor="voidReason" className="text-sm font-medium text-slate-300">Reason for Voiding</label>
+            <Input
+              id="voidReason"
+              value={reason}
+              onChange={(e) => setReason(e.target.value)}
+              required
+              autoFocus
+              className="mt-2"
+              placeholder="e.g., Customer cancellation, wrong order"
+            />
+          </CardContent>
+          <CardFooter className="flex justify-end gap-2">
+            <Button type="button" variant="secondary" onClick={onClose}>Cancel</Button>
+            <Button type="submit" variant="destructive">Confirm Void</Button>
+          </CardFooter>
+        </form>
+      </Card>
+    </div>
+  );
+};
+
 
 const SalesReportPage: React.FC = () => {
-  const { sales } = useData();
+  const { sales, voidSale } = useData();
   
   const today = new Date().toISOString().split('T')[0];
   const [startDate, setStartDate] = useState(today);
   const [endDate, setEndDate] = useState(today);
+  const [voidingSale, setVoidingSale] = useState<Sale | null>(null);
 
   const filteredSales = useMemo(() => {
     if (!startDate || !endDate) return [];
     
-    // Using .replace() for cross-browser compatibility on parsing 'YYYY-MM-DD' as local time
     const start = new Date(startDate.replace(/-/g, '/'));
     start.setHours(0, 0, 0, 0);
 
@@ -31,6 +78,8 @@ const SalesReportPage: React.FC = () => {
   const chartData = useMemo(() => {
     const dailySales = new Map<string, number>();
     filteredSales.forEach(sale => {
+        if (sale.status !== SaleStatus.COMPLETED) return;
+
         const saleDate = new Date(sale.date);
         const year = saleDate.getFullYear();
         const month = String(saleDate.getMonth() + 1).padStart(2, '0');
@@ -63,11 +112,20 @@ const SalesReportPage: React.FC = () => {
 }, [filteredSales, startDate, endDate]);
 
   const totalRevenue = useMemo(() => {
-      return filteredSales.reduce((sum, sale) => sum + sale.total, 0);
+      return filteredSales
+        .filter(sale => sale.status === SaleStatus.COMPLETED)
+        .reduce((sum, sale) => sum + sale.total, 0);
   }, [filteredSales]);
 
   const formatCurrency = (amount: number) => new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR' }).format(amount);
   const formatDate = (dateString: string) => new Date(dateString).toLocaleString('id-ID');
+
+  const handleConfirmVoid = (reason: string) => {
+    if (voidingSale) {
+        voidSale(voidingSale.id, reason);
+        setVoidingSale(null);
+    }
+  };
 
   const handleExportCSV = () => {
     if (filteredSales.length === 0) {
@@ -75,18 +133,19 @@ const SalesReportPage: React.FC = () => {
         return;
     }
 
-    const headers = ["Invoice #", "Date", "Items", "Payment Method", "Subtotal", "Tax", "Total"];
+    const headers = ["Invoice #", "Date", "Items", "Payment Method", "Subtotal", "Tax", "Total", "Status"];
     const csvRows = [headers.join(',')];
 
     filteredSales.forEach(sale => {
         const row = [
             sale.invoiceNo,
-            `"${formatDate(sale.date)}"`, // Enclose date in quotes to handle potential commas
+            `"${formatDate(sale.date)}"`,
             sale.items.reduce((sum, item) => sum + item.qty, 0),
             sale.paymentMethod,
             sale.subtotal,
             sale.tax,
             sale.total,
+            sale.status,
         ];
         csvRows.push(row.join(','));
     });
@@ -139,26 +198,41 @@ const SalesReportPage: React.FC = () => {
                   <th scope="col" className="px-6 py-3">Items</th>
                   <th scope="col" className="px-6 py-3">Payment</th>
                   <th scope="col" className="px-6 py-3 text-right">Total</th>
+                  <th scope="col" className="px-6 py-3">Status</th>
+                  <th scope="col" className="px-6 py-3">Actions</th>
                 </tr>
               </thead>
               <tbody>
                 {filteredSales.length > 0 ? filteredSales.map((sale) => (
-                  <tr key={sale.id} className="border-b border-slate-800 hover:bg-slate-800/50">
+                  <tr key={sale.id} className={`border-b border-slate-800 ${sale.status === SaleStatus.VOIDED ? 'bg-slate-800/30 text-slate-500 line-through' : 'hover:bg-slate-800/50'}`}>
                     <td className="px-6 py-4 font-medium text-slate-200">{sale.invoiceNo}</td>
                     <td className="px-6 py-4">{formatDate(sale.date)}</td>
                     <td className="px-6 py-4">{sale.items.reduce((sum, item) => sum + item.qty, 0)}</td>
                     <td className="px-6 py-4">{sale.paymentMethod}</td>
-                    <td className="px-6 py-4 text-right font-semibold text-white">{formatCurrency(sale.total)}</td>
+                    <td className={`px-6 py-4 text-right font-semibold ${sale.status !== SaleStatus.VOIDED && 'text-white'}`}>{formatCurrency(sale.total)}</td>
+                    <td className="px-6 py-4">
+                        <span className={`px-2 py-1 text-xs font-medium rounded-full ${
+                            sale.status === SaleStatus.COMPLETED ? 'bg-green-900 text-green-300' 
+                            : 'bg-red-900 text-red-300'
+                        }`}>
+                            {sale.status}
+                        </span>
+                    </td>
+                    <td className="px-6 py-4">
+                        {sale.status === SaleStatus.COMPLETED && (
+                            <Button variant="destructive" size="sm" onClick={() => setVoidingSale(sale)}>Void</Button>
+                        )}
+                    </td>
                   </tr>
                 )) : (
                   <tr>
-                    <td colSpan={5} className="text-center py-8 text-slate-500">No sales found for the selected period.</td>
+                    <td colSpan={7} className="text-center py-8 text-slate-500">No sales found for the selected period.</td>
                   </tr>
                 )}
               </tbody>
               <tfoot>
                 <tr className="font-semibold text-white bg-slate-800">
-                    <td colSpan={4} className="px-6 py-3 text-right text-lg">Total Revenue</td>
+                    <td colSpan={6} className="px-6 py-3 text-right text-lg">Total Revenue (Completed Sales)</td>
                     <td className="px-6 py-3 text-right text-lg">{formatCurrency(totalRevenue)}</td>
                 </tr>
               </tfoot>
@@ -166,6 +240,10 @@ const SalesReportPage: React.FC = () => {
           </div>
         </CardContent>
       </Card>
+
+      {voidingSale && (
+        <VoidSaleModal sale={voidingSale} onClose={() => setVoidingSale(null)} onConfirm={handleConfirmVoid} />
+      )}
     </div>
   );
 };

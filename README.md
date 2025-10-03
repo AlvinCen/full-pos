@@ -1,20 +1,98 @@
-<div align="center">
-<img width="1200" height="475" alt="GHBanner" src="https://github.com/user-attachments/assets/0aa67016-6eaf-458a-adb2-6e31a0763ed6" />
-</div>
+# Full-Stack Point of Sale (POS) System
 
-# Run and deploy your AI Studio app
+This repository contains a production-ready Point of Sale (POS) system designed for Indonesian SMEs. It is built using a modern full-stack architecture within a monorepo.
 
-This contains everything you need to run your app locally.
+## Project Architecture
 
-View your app in AI Studio: https://ai.studio/apps/drive/1h-bIRRqRojCKR9Kubfv5nb-m3S8Lp2H_
+- **Monorepo:** Managed with npm workspaces.
+- **Frontend (`apps/web`):** Next.js 14 (App Router), React, Tailwind CSS, shadcn/ui. Runs on `http://localhost:3000`.
+- **Backend (`apps/server`):** Node.js, Express, TypeScript. Runs on `http://localhost:4000`.
+- **Database:** PostgreSQL, managed with Prisma ORM. Runs on `localhost:5432`.
 
-## Run Locally
+## Prerequisites
 
-**Prerequisites:**  Node.js
+- **Node.js:** v18 or later.
+- **npm:** v8 or later.
+- **PostgreSQL:** A running instance. You can use a local installation or Docker.
+- **Git:** For version control.
 
+## Windows Development Setup
 
-1. Install dependencies:
-   `npm install`
-2. Set the `GEMINI_API_KEY` in [.env.local](.env.local) to your Gemini API key
-3. Run the app:
-   `npm run dev`
+### 1. Database Setup
+
+Ensure you have a PostgreSQL server running. Create a new database for this project (e.g., `pos_db`).
+
+### 2. Environment Configuration
+
+Create a `.env` file in the root of the project by copying the example:
+
+```bash
+copy .env.example .env
+```
+
+Now, edit the `.env` file and update the `DATABASE_URL` with your PostgreSQL connection string. It should look something like this:
+
+```
+DATABASE_URL="postgresql://USERNAME:PASSWORD@localhost:5432/DATABASE_NAME?schema=public"
+```
+
+Replace `USERNAME`, `PASSWORD`, and `DATABASE_NAME` with your actual database credentials.
+
+### 3. Install Dependencies
+
+Install all dependencies for the entire monorepo from the root directory:
+
+```bash
+npm install
+```
+
+### 4. Database Migration & Seeding
+
+This command will apply the database schema and populate it with initial demo data (users, roles, etc.).
+
+```bash
+npm run prisma:migrate
+```
+
+This combines `prisma migrate deploy` and `prisma db seed`.
+
+## Running the Application
+
+### 1. Start the Backend Server
+
+Open a terminal in the project root and run:
+
+```bash
+npm run server
+```
+
+The backend API will be available at `http://localhost:4000`.
+
+**Prisma EPERM Error on Windows:** If you try to run a Prisma command (like `prisma migrate dev`) while the server is running, you might get an `EPERM: operation not permitted, rename` error. To fix this, **stop the server (`Ctrl + C`) before running any other `prisma` commands.**
+
+### 2. Start the Frontend Development Server
+
+Open a **new** terminal in the project root and run:
+
+```bash
+npm run web
+```
+
+The frontend application will be available at `http://localhost:3000`.
+
+## Available Scripts
+
+All scripts should be run from the **root directory** of the project.
+
+- `npm run web`: Starts the Next.js frontend dev server.
+- `npm run server`: Starts the Express backend dev server using `ts-node-dev`.
+- `npm run prisma:generate`: Generates the Prisma Client based on your schema.
+- `npm run prisma:deploy`: Applies pending database migrations.
+- `npm run prisma:migrate`: A convenience script that runs `deploy` and then `seed`. Use this for initial setup.
+- `npm run prisma:studio`: Opens the Prisma Studio to view and manage your data.
+
+## Demo Users
+
+- **Admin:** `admin@rekber.id` / `admin123`
+- **Buyer:** `buyer@test.com` / `buyer123`
+- **Seller:** `seller@test.com` / `seller123`

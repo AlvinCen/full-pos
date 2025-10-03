@@ -1,4 +1,4 @@
-import { User, UserRole, Outlet, Category, Unit, Product, Purchase, PurchaseStatus, Sale, PaymentMethod, BilliardTable, TableStatus, BilliardTableType, PricelistPackage, PricingUnit, RoundingMethod, Shift, CashMovement } from './types';
+import { User, UserRole, Outlet, Category, Unit, Product, Purchase, PurchaseStatus, Sale, PaymentMethod, BilliardTable, TableStatus, BilliardTableType, PricelistPackage, PricingUnit, RoundingMethod, Shift, CashMovement, SaleStatus, AuditLog } from './types';
 
 export const USERS: User[] = [
   { id: 'user-1', name: 'Admin Rekber', email: 'admin@rekber.id', passwordHash: 'admin123', role: UserRole.ADMIN, isActive: true, outletId: 'outlet-1' },
@@ -69,14 +69,14 @@ export const initialPurchases: Purchase[] = [
 
 export const initialSales: Sale[] = [
     {
-        id: 'sale-1', outletId: 'outlet-1', userId: 'user-4', shiftId: 'shift-0', invoiceNo: 'INV-0001', date: new Date(Date.now() - 1 * 60 * 60 * 1000).toISOString(), subtotal: 55000, discount: 0, tax: 5500, total: 60500, paymentMethod: PaymentMethod.CASH, paid: 70000, change: 9500,
+        id: 'sale-1', outletId: 'outlet-1', userId: 'user-4', shiftId: 'shift-0', invoiceNo: 'INV-0001', date: new Date(Date.now() - 1 * 60 * 60 * 1000).toISOString(), subtotal: 55000, discount: 0, tax: 5500, total: 60500, paymentMethod: PaymentMethod.CASH, paid: 70000, change: 9500, status: SaleStatus.COMPLETED,
         items: [
             { id: 'si-1', saleId: 'sale-1', productId: 'prod-2', qty: 1, price: 25000, discount: 0 },
             { id: 'si-2', saleId: 'sale-1', productId: 'prod-3', qty: 1, price: 30000, discount: 0 }
         ]
     },
     {
-        id: 'sale-2', outletId: 'outlet-1', userId: 'user-4', shiftId: 'shift-0', invoiceNo: 'INV-0002', date: new Date(Date.now() - 2 * 60 * 60 * 1000).toISOString(), subtotal: 100000, discount: 10000, tax: 9000, total: 99000, paymentMethod: PaymentMethod.QRIS, paid: 99000, change: 0,
+        id: 'sale-2', outletId: 'outlet-1', userId: 'user-4', shiftId: 'shift-0', invoiceNo: 'INV-0002', date: new Date(Date.now() - 2 * 60 * 60 * 1000).toISOString(), subtotal: 100000, discount: 10000, tax: 9000, total: 99000, paymentMethod: PaymentMethod.QRIS, paid: 99000, change: 0, status: SaleStatus.COMPLETED,
         items: [
             { id: 'si-3', saleId: 'sale-2', productId: 'prod-10', qty: 2, price: 45000, discount: 0 },
             { id: 'si-4', saleId: 'sale-2', productId: 'prod-7', qty: 1, price: 10000, discount: 0 }
@@ -155,3 +155,6 @@ export const PRICELIST_PACKAGES: PricelistPackage[] = [
 // --- Cashier Shift Data ---
 export const initialShifts: Shift[] = [];
 export const initialCashMovements: CashMovement[] = [];
+
+// --- Audit Log Data ---
+export const initialAuditLogs: AuditLog[] = [];

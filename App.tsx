@@ -21,6 +21,7 @@ import SessionHistoryPage from './pages/billiards/SessionHistoryPage';
 import PricelistPage from './pages/settings/PricelistPage';
 import TablesPage from './pages/settings/TablesPage';
 import ShiftsPage from './pages/shifts/ShiftsPage';
+import AuditLogPage from './pages/reports/AuditLogPage';
 
 const ProtectedRoute: React.FC<{ children: React.ReactElement }> = ({ children }) => {
   const { user } = useAuth();
@@ -59,6 +60,7 @@ const AppRoutes: React.FC = () => {
         <Route path="inventory/units" element={<UnitsPage />} />
         <Route path="purchases" element={<PurchasesPage />} />
         <Route path="reports/sales" element={<SalesReportPage />} />
+        <Route path="reports/audit-log" element={<AuditLogPage />} />
         <Route path="settings/outlet" element={<OutletSettingsPage />} />
         <Route path="settings/pricelist" element={<PricelistPage />} />
         <Route path="settings/tables" element={<TablesPage />} />

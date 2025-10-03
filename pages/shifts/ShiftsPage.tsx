@@ -132,7 +132,7 @@ const ShiftsPage: React.FC = () => {
                 </CardContent>
              </Card>
 
-            {isStartModalOpen && user && <StartShiftModal user={user} onClose={() => setStartModalOpen(false)} />}
+            {isStartModalOpen && <StartShiftModal onClose={() => setStartModalOpen(false)} />}
             {isEndModalOpen && activeShift && <EndShiftModal shift={activeShift} onClose={() => setEndModalOpen(false)} />}
             {isCashModalOpen && <CashMovementModal type={cashModalType} onClose={() => setCashModalOpen(false)} />}
 

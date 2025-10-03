@@ -1,23 +1,21 @@
 import React, { useState } from 'react';
 import { useData } from '../../hooks/useData';
-import { User } from '../../types';
 import { Card, CardHeader, CardTitle, CardContent, CardFooter } from '../ui/Card';
 import { Button } from '../ui/Button';
 import { Input } from '../ui/Input';
 
 interface StartShiftModalProps {
-  user: User;
   onClose: () => void;
 }
 
-const StartShiftModal: React.FC<StartShiftModalProps> = ({ user, onClose }) => {
+const StartShiftModal: React.FC<StartShiftModalProps> = ({ onClose }) => {
   const { startShift } = useData();
   const [startCash, setStartCash] = useState(0);
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     try {
-      startShift(user, startCash);
+      startShift(startCash);
       onClose();
     } catch (error) {
       alert((error as Error).message);

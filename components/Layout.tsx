@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { NavLink, Outlet, useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../hooks/useAuth';
-import { HomeIcon, ShoppingCartIcon, KitchenIcon, InventoryIcon, ReportIcon, SettingsIcon, LogoutIcon, MenuIcon, XIcon, BoxIcon, TagIcon, ChevronDownIcon, ScaleIcon, BilliardsIcon, CashIcon } from './icons/Icons';
+import { HomeIcon, ShoppingCartIcon, KitchenIcon, InventoryIcon, ReportIcon, SettingsIcon, LogoutIcon, MenuIcon, XIcon, BoxIcon, TagIcon, ChevronDownIcon, ScaleIcon, BilliardsIcon, CashIcon, AuditLogIcon, FileTextIcon } from './icons/Icons';
 import ActiveShiftIndicator from './ActiveShiftIndicator';
 
 const NavItem: React.FC<{ to: string; icon: React.ReactNode; children: React.ReactNode; onClick?: () => void }> = ({ to, icon, children, onClick }) => (
@@ -98,7 +98,14 @@ const Sidebar: React.FC<{onLinkClick: () => void}> = ({ onLinkClick }) => {
             <SubNavItem to="/inventory/categories" icon={<TagIcon />} onClick={onLinkClick}>Categories</SubNavItem>
             <SubNavItem to="/inventory/units" icon={<ScaleIcon />} onClick={onLinkClick}>Units</SubNavItem>
         </CollapsibleNavItem>
-        <NavItem to="/reports/sales" icon={<ReportIcon />} onClick={onLinkClick}>Reports</NavItem>
+        <CollapsibleNavItem 
+            icon={<ReportIcon />} 
+            title="Reports"
+            paths={['/reports/sales', '/reports/audit-log']}
+        >
+            <SubNavItem to="/reports/sales" icon={<FileTextIcon />} onClick={onLinkClick}>Sales</SubNavItem>
+            <SubNavItem to="/reports/audit-log" icon={<AuditLogIcon />} onClick={onLinkClick}>Audit Log</SubNavItem>
+        </CollapsibleNavItem>
         <CollapsibleNavItem 
             icon={<SettingsIcon />} 
             title="Settings"

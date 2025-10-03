@@ -102,6 +102,12 @@ export interface SaleItem {
   discount: number;
 }
 
+export enum SaleStatus {
+  COMPLETED = 'COMPLETED',
+  VOIDED = 'VOIDED',
+  REFUNDED = 'REFUNDED',
+}
+
 export interface Sale {
   id: string;
   outletId: string;
@@ -117,6 +123,8 @@ export interface Sale {
   paymentMethod: PaymentMethod;
   paid: number;
   change: number;
+  status: SaleStatus;
+  notes?: string; // For void/refund reason
   items: SaleItem[];
 }
 
@@ -270,4 +278,35 @@ export interface Shift {
   difference?: number;
   
   notes?: string;
+}
+
+// --- Audit Log ---
+export enum AuditLogAction {
+    // Shifts
+    SHIFT_START = 'SHIFT_START',
+    SHIFT_END = 'SHIFT_END',
+    // Sales
+    SALE_VOID = 'SALE_VOID',
+    SALE_REFUND = 'SALE_REFUND',
+    // Inventory - Product
+    PRODUCT_CREATE = 'PRODUCT_CREATE',
+    PRODUCT_UPDATE = 'PRODUCT_UPDATE',
+    // Inventory - Category
+    CATEGORY_CREATE = 'CATEGORY_CREATE',
+    CATEGORY_UPDATE = 'CATEGORY_UPDATE',
+    CATEGORY_DELETE = 'CATEGORY_DELETE',
+    // Inventory - Unit
+    UNIT_CREATE = 'UNIT_CREATE',
+    UNIT_UPDATE = 'UNIT_UPDATE',
+    UNIT_DELETE = 'UNIT_DELETE',
+}
+
+export interface AuditLog {
+  id: string;
+  timestamp: number;
+  userId: string;
+  userName: string;
+  action: AuditLogAction;
+  details: string; 
+  entityId?: string; 
 }
