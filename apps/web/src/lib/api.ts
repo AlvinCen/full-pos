@@ -1,5 +1,3 @@
-// This file will contain all the client-side logic for making API calls to the backend.
-
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4000/api';
 
 export interface LoginCredentials {
@@ -7,26 +5,77 @@ export interface LoginCredentials {
   password: string;
 }
 
-async function handleResponse(response: Response) {
+export interface ReturnItemPayload {
+  productId: string;
+  quantity: number;
+}
+export interface CreateReturnPayload {
+  saleId: string;
+  reason: string;
+  items: ReturnItemPayload[];
+}
+
+// A helper to get the auth headers
+function getAuthHeaders() {
+  const headers: HeadersInit = {
+    'Content-Type': 'application/json',
+  };
+  try {
+    const storedUser = localStorage.getItem('pos-user');
+    if (storedUser) {
+      const user = JSON.parse(storedUser);
+      if (user?.id) {
+        headers['x-user-id'] = user.id;
+      }
+    }
+  } catch (e) {
+    console.error("Could not parse user from localStorage", e);
+  }
+  return headers;
+}
+
+// A generic request handler
+async function apiRequest(endpoint: string, options: RequestInit = {}) {
+  const response = await fetch(`${API_BASE_URL}${endpoint}`, {
+    ...options,
+    headers: {
+      ...getAuthHeaders(),
+      ...options.headers,
+    },
+  });
+
   const data = await response.json();
   if (!response.ok) {
-    throw new Error(data.message || 'An error occurred');
+    throw new Error(data.message || 'An API error occurred');
   }
   return data;
 }
 
+
 export const api = {
   login: async (credentials: LoginCredentials) => {
-    const response = await fetch(`${API_BASE_URL}/auth/login`, {
+    return apiRequest('/auth/login', {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
       body: JSON.stringify(credentials),
     });
-    return handleResponse(response);
+  },
+
+  getMe: async () => {
+    return apiRequest('/auth/me');
   },
   
-  // Future API functions can be added here
-  // e.g., getProducts, createSale, etc.
+  getSales: async () => {
+    return apiRequest('/sales');
+  },
+
+  getSaleById: async (saleId: string) => {
+    return apiRequest(`/sales/${saleId}`);
+  },
+
+  createReturn: async (payload: CreateReturnPayload) => {
+    return apiRequest('/returns', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    });
+  }
 };

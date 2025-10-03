@@ -1,4 +1,4 @@
-# Full-Stack Point of Sale (POS) System
+# Full-Stack Point of Sale (POS) System - v2
 
 This repository contains a production-ready Point of Sale (POS) system designed for Indonesian SMEs. It is built using a modern full-stack architecture within a monorepo.
 
@@ -20,7 +20,7 @@ This repository contains a production-ready Point of Sale (POS) system designed 
 
 ### 1. Database Setup
 
-Ensure you have a PostgreSQL server running. Create a new database for this project (e.g., `pos_db`).
+Ensure you have a PostgreSQL server running. Create a new database for this project (e.g., `pos_db_v2`).
 
 ### 2. Environment Configuration
 
@@ -33,10 +33,10 @@ copy .env.example .env
 Now, edit the `.env` file and update the `DATABASE_URL` with your PostgreSQL connection string. It should look something like this:
 
 ```
-DATABASE_URL="postgresql://USERNAME:PASSWORD@localhost:5432/DATABASE_NAME?schema=public"
+DATABASE_URL="postgresql://USERNAME:PASSWORD@localhost:5432/pos_db_v2?schema=public"
 ```
 
-Replace `USERNAME`, `PASSWORD`, and `DATABASE_NAME` with your actual database credentials.
+Replace `USERNAME`, `PASSWORD`, and `pos_db_v2` with your actual database credentials.
 
 ### 3. Install Dependencies
 
@@ -48,7 +48,7 @@ npm install
 
 ### 4. Database Migration & Seeding
 
-This command will apply the database schema and populate it with initial demo data (users, roles, etc.).
+This command will apply the database schema and populate it with initial demo data (users, roles, products, sales, etc.).
 
 ```bash
 npm run prisma:migrate
@@ -68,7 +68,7 @@ npm run server
 
 The backend API will be available at `http://localhost:4000`.
 
-**Prisma EPERM Error on Windows:** If you try to run a Prisma command (like `prisma migrate dev`) while the server is running, you might get an `EPERM: operation not permitted, rename` error. To fix this, **stop the server (`Ctrl + C`) before running any other `prisma` commands.**
+**Important Note for Windows Users:** If you need to run another Prisma command (like `prisma studio` or `prisma migrate dev`) while the server is running, you might get an `EPERM: operation not permitted, rename` error. To fix this, **stop the server (`Ctrl + C`) before running any other `prisma` commands.**
 
 ### 2. Start the Frontend Development Server
 
@@ -88,6 +88,7 @@ All scripts should be run from the **root directory** of the project.
 - `npm run server`: Starts the Express backend dev server using `ts-node-dev`.
 - `npm run prisma:generate`: Generates the Prisma Client based on your schema.
 - `npm run prisma:deploy`: Applies pending database migrations.
+- `npm run prisma:seed`: Populates the database with seed data.
 - `npm run prisma:migrate`: A convenience script that runs `deploy` and then `seed`. Use this for initial setup.
 - `npm run prisma:studio`: Opens the Prisma Studio to view and manage your data.
 

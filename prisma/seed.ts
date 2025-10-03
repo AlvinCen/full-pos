@@ -1,116 +1,96 @@
 import { PrismaClient } from '@prisma/client';
 import bcrypt from 'bcrypt';
-// FIX: Add 'import process from "process"' to provide correct type definitions for the global process object.
 import process from 'process';
 
 const prisma = new PrismaClient();
 
+const PERMISSIONS = [
+    // Special permission for admin
+    'all',
+    // Sales and POS
+    'sale:create',
+    'sale:read',
+    'sale:void',
+    'sale:refund',
+    // Shifts
+    'shift:open',
+    'shift:close',
+    'shift:cashInOut',
+    // Reports
+    'report:view',
+    // Settings
+    'settings:edit',
+    // Inventory
+    'product:create',
+    'product:read',
+    'product:update',
+    'product:delete',
+    'inventory:adjust',
+    'inventory:receive',
+];
+
 async function main() {
   console.log('Start seeding...');
-
-  // Create Roles
-  const adminRole = await prisma.role.upsert({
-    where: { name: 'ADMIN' },
-    update: {},
-    create: { name: 'ADMIN', permissions: ['all'] },
-  });
-
-  const cashierRole = await prisma.role.upsert({
-    where: { name: 'CASHIER' },
-    update: {},
-    create: { name: 'CASHIER', permissions: ['pos:create', 'shifts:manage'] },
-  });
   
-  const buyerRole = await prisma.role.upsert({
-    where: { name: 'BUYER' },
-    update: {},
-    create: { name: 'BUYER', permissions: [] },
-  });
-  
-  const sellerRole = await prisma.role.upsert({
-    where: { name: 'SELLER' },
-    update: {},
-    create: { name: 'SELLER', permissions: [] },
-  });
+  // Clean up previous RBAC data
+  await prisma.rolePermission.deleteMany({});
+  await prisma.userRole.deleteMany({});
+  await prisma.permission.deleteMany({});
+  await prisma.role.deleteMany({});
 
-  console.log('Roles created/verified.');
-
-  // Create Outlet
-  const demoOutlet = await prisma.outlet.upsert({
-    where: { id: 'outlet-1' },
-    update: {},
-    create: {
-      id: 'outlet-1',
-      name: 'Demo Outlet',
-      address: '123 Main Street, Jakarta',
-      phone: '081234567890',
-      taxPercent: 10,
-      receiptHeader: 'Thank you for your purchase!',
-      receiptFooter: 'Please come again.',
-      timezone: 'Asia/Jakarta',
-    },
-  });
-
-  console.log('Outlet created/verified.');
-
-  // Create Users
-  const passwordHash = await bcrypt.hash('admin123', 10);
-  const buyerPasswordHash = await bcrypt.hash('buyer123', 10);
-  const sellerPasswordHash = await bcrypt.hash('seller123', 10);
-  
-  await prisma.user.upsert({
-    where: { email: 'admin@rekber.id' },
-    update: {},
-    create: {
-      name: 'Admin Rekber',
-      email: 'admin@rekber.id',
-      passwordHash: passwordHash,
-      roleId: adminRole.id,
-      outletId: demoOutlet.id,
-      isActive: true,
-    },
-  });
-  
-  await prisma.user.upsert({
-    where: { email: 'buyer@test.com' },
-    update: {},
-    create: {
-      name: 'Buyer Test',
-      email: 'buyer@test.com',
-      passwordHash: buyerPasswordHash,
-      roleId: buyerRole.id,
-      outletId: demoOutlet.id,
-      isActive: true,
-    },
-  });
-  
-  await prisma.user.upsert({
-    where: { email: 'seller@test.com' },
-    update: {},
-    create: {
-      name: 'Seller Test',
-      email: 'seller@test.com',
-      passwordHash: sellerPasswordHash,
-      roleId: sellerRole.id,
-      outletId: demoOutlet.id,
-      isActive: true,
-    },
-  });
-
-  console.log('Users created/verified.');
-
-  // Seed Master Data
-  const categories = ['Hot Coffee', 'Iced Coffee', 'Non-Coffee', 'Pastries', 'Main Course', 'Snacks'];
-  for (const cat of categories) {
-    await prisma.category.upsert({ where: { name: cat }, update: {}, create: { name: cat } });
+  // --- Permissions ---
+  for (const perm of PERMISSIONS) {
+    await prisma.permission.upsert({
+      where: { name: perm },
+      update: {},
+      create: { name: perm },
+    });
   }
+  const allPermissions = await prisma.permission.findMany();
+  console.log('Permissions created.');
 
-  const units = [{ name: 'pcs', precision: 0 }, { name: 'kg', precision: 2 }, { name: 'box', precision: 0 }, { name: 'ml', precision: 0 }];
-  for (const unit of units) {
-    await prisma.unit.upsert({ where: { name: unit.name }, update: {}, create: unit });
+  // --- Roles ---
+  const adminRole = await prisma.role.create({ data: { name: 'ADMIN' } });
+  const managerRole = await prisma.role.create({ data: { name: 'MANAGER' } });
+  const cashierRole = await prisma.role.create({ data: { name: 'CASHIER' } });
+
+  // --- Assign Permissions to Roles ---
+  const getPermId = (name: string) => allPermissions.find(p => p.name === name)!.id;
+
+  // Admin gets 'all'
+  await prisma.rolePermission.create({ data: { roleId: adminRole.id, permissionId: getPermId('all') } });
+
+  // Manager gets most permissions
+  const managerPerms = PERMISSIONS.filter(p => p !== 'all');
+  for (const permName of managerPerms) {
+    await prisma.rolePermission.create({ data: { roleId: managerRole.id, permissionId: getPermId(permName) } });
   }
+  
+  // Cashier gets limited permissions
+  const cashierPerms = ['sale:create', 'sale:read', 'shift:open', 'shift:close', 'shift:cashInOut'];
+  for (const permName of cashierPerms) {
+    await prisma.rolePermission.create({ data: { roleId: cashierRole.id, permissionId: getPermId(permName) } });
+  }
+  console.log('Roles and permissions linked.');
 
-  console.log('Master data (Categories, Units) seeded.');
+  // --- Outlet ---
+  const demoOutlet = await prisma.outlet.upsert({ where: { id: 'outlet-1' }, update: {}, create: { id: 'outlet-1', name: 'Demo Outlet' } });
+
+  // --- Users ---
+  const adminPass = await bcrypt.hash('admin123', 10);
+  const managerPass = await bcrypt.hash('manager123', 10);
+  const cashierPass = await bcrypt.hash('cashier123', 10);
+
+  const adminUser = await prisma.user.upsert({ where: { email: 'admin@demo.local' }, update: { passwordHash: adminPass }, create: { name: 'Admin User', email: 'admin@demo.local', passwordHash: adminPass, outletId: demoOutlet.id } });
+  const managerUser = await prisma.user.upsert({ where: { email: 'manager@demo.local' }, update: { passwordHash: managerPass }, create: { name: 'Manager User', email: 'manager@demo.local', passwordHash: managerPass, outletId: demoOutlet.id } });
+  const cashierUser = await prisma.user.upsert({ where: { email: 'cashier@demo.local' }, update: { passwordHash: cashierPass }, create: { name: 'Cashier User', email: 'cashier@demo.local', passwordHash: cashierPass, outletId: demoOutlet.id } });
+
+  // --- Assign Roles to Users ---
+  await prisma.userRole.create({ data: { userId: adminUser.id, roleId: adminRole.id } });
+  await prisma.userRole.create({ data: { userId: managerUser.id, roleId: managerRole.id } });
+  await prisma.userRole.create({ data: { userId: cashierUser.id, roleId: cashierRole.id } });
+  console.log('Users created and roles assigned.');
+
   console.log('Seeding finished.');
 }
 
