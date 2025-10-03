@@ -1,8 +1,8 @@
-
 import React, { useState, useEffect } from 'react';
 import { NavLink, Outlet, useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../hooks/useAuth';
-import { HomeIcon, ShoppingCartIcon, KitchenIcon, InventoryIcon, ReportIcon, SettingsIcon, LogoutIcon, MenuIcon, XIcon, BoxIcon, TagIcon, ChevronDownIcon, ScaleIcon, BilliardsIcon } from './icons/Icons';
+import { HomeIcon, ShoppingCartIcon, KitchenIcon, InventoryIcon, ReportIcon, SettingsIcon, LogoutIcon, MenuIcon, XIcon, BoxIcon, TagIcon, ChevronDownIcon, ScaleIcon, BilliardsIcon, CashIcon } from './icons/Icons';
+import ActiveShiftIndicator from './ActiveShiftIndicator';
 
 const NavItem: React.FC<{ to: string; icon: React.ReactNode; children: React.ReactNode; onClick?: () => void }> = ({ to, icon, children, onClick }) => (
   <NavLink
@@ -88,6 +88,7 @@ const Sidebar: React.FC<{onLinkClick: () => void}> = ({ onLinkClick }) => {
         <NavItem to="/pos" icon={<ShoppingCartIcon />} onClick={onLinkClick}>POS</NavItem>
         <NavItem to="/kds" icon={<KitchenIcon />} onClick={onLinkClick}>KDS</NavItem>
         <NavItem to="/billiards" icon={<BilliardsIcon />} onClick={onLinkClick}>Billiards</NavItem>
+        <NavItem to="/shifts" icon={<CashIcon />} onClick={onLinkClick}>Shifts</NavItem>
         <CollapsibleNavItem 
             icon={<InventoryIcon />} 
             title="Inventory"
@@ -145,6 +146,7 @@ const Layout: React.FC = () => {
         </header>
 
         <main className="flex-1 relative overflow-y-auto focus:outline-none p-4 md:p-6 lg:p-8">
+            <ActiveShiftIndicator />
             <div className="max-w-7xl mx-auto">
                 <Outlet />
             </div>

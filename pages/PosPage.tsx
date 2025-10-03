@@ -1,4 +1,5 @@
 import React, { useState, useMemo, useCallback, useRef, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { useData } from '../hooks/useData';
 import { useAuth } from '../hooks/useAuth';
 import { Product, Sale, SaleItem, PaymentMethod } from '../types';
@@ -14,8 +15,9 @@ interface CartItem extends SaleItem {
 }
 
 const PosPage: React.FC = () => {
-    const { products, addSale, outlet } = useData();
+    const { products, addSale, outlet, activeShift } = useData();
     const { user } = useAuth();
+    const navigate = useNavigate();
     const [searchTerm, setSearchTerm] = useState('');
     const [cart, setCart] = useState<CartItem[]>([]);
     const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>(PaymentMethod.CASH);
@@ -27,8 +29,10 @@ const PosPage: React.FC = () => {
     const barcodeInputRef = useRef<HTMLInputElement>(null);
 
     useEffect(() => {
-        barcodeInputRef.current?.focus();
-    }, []);
+        if (activeShift) {
+            barcodeInputRef.current?.focus();
+        }
+    }, [activeShift]);
 
     const filteredProducts = useMemo(() => {
         if (!searchTerm) return products;
@@ -115,7 +119,7 @@ const PosPage: React.FC = () => {
     const change = useMemo(() => amountPaid - total, [amountPaid, total]);
 
     const handlePayment = () => {
-        if (!user) return;
+        if (!user || !activeShift) return;
         if (cart.length === 0) return;
         
         const sale = addSale({
@@ -147,8 +151,24 @@ const PosPage: React.FC = () => {
         }} />;
     }
 
+    if (!activeShift) {
+        return (
+            <div className="flex flex-col items-center justify-center h-full text-center">
+                <Card className="max-w-md">
+                    <CardHeader>
+                        <CardTitle>No Active Shift</CardTitle>
+                    </CardHeader>
+                    <CardContent>
+                        <p className="text-slate-400 mb-6">You must start a new shift before you can make any sales.</p>
+                        <Button onClick={() => navigate('/shifts')}>Go to Shifts Page</Button>
+                    </CardContent>
+                </Card>
+            </div>
+        );
+    }
+
     return (
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 h-[calc(100vh-6rem)]">
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 h-[calc(100vh-8.5rem)]">
             {/* Product List */}
             <div className="lg:col-span-2 h-full flex flex-col">
                 <Card className="flex-shrink-0">

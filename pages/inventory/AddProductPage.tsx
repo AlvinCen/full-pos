@@ -1,5 +1,5 @@
-import React, { useState, useEffect } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
+import React, { useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { useData } from '../../hooks/useData';
 import { Product } from '../../types';
 import { Card, CardHeader, CardTitle, CardContent, CardFooter } from '../../components/ui/Card';
@@ -8,70 +8,79 @@ import { Input } from '../../components/ui/Input';
 import { Select } from '../../components/ui/Select';
 import { Switch } from '../../components/ui/Switch';
 
-const EditProductPage: React.FC = () => {
-    const { productId } = useParams<{ productId: string }>();
+const AddProductPage: React.FC = () => {
     const navigate = useNavigate();
-    const { getProductById, updateProduct, categories, units } = useData();
+    const { addProduct, categories, units } = useData();
 
-    const [formData, setFormData] = useState<Product | null>(null);
+    const [formData, setFormData] = useState<Omit<Product, 'id'>>({
+        name: '',
+        sku: '',
+        barcode: '',
+        categoryId: '',
+        unitId: '',
+        price: 0,
+        cost: 0,
+        stock: 0,
+        minStock: 0,
+        isKitchen: false,
+        isFnb: false,
+        isActive: true,
+    });
     const [isLoading, setIsLoading] = useState(false);
     const [error, setError] = useState('');
 
-    useEffect(() => {
-        if (productId) {
-            const product = getProductById(productId);
-            if (product) {
-                setFormData(product);
-            }
-        }
-    }, [productId, getProductById]);
-
-    if (!formData) {
-        return <div className="text-center text-slate-400">Loading product data...</div>;
-    }
-
     const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
-        const { name, value, type } = e.target;
+        const { name, value } = e.target;
         const isNumeric = ['price', 'cost', 'stock', 'minStock'].includes(name);
         
-        setFormData(prev => prev ? {
+        setFormData(prev => ({
             ...prev,
-            [name]: isNumeric ? parseFloat(value) : value
-        } : null);
+            [name]: isNumeric ? parseFloat(value) || 0 : value
+        }));
     };
 
-    const handleSwitchChange = (name: keyof Product, checked: boolean) => {
-         setFormData(prev => prev ? {
+    const handleSwitchChange = (name: keyof Omit<Product, 'id'>, checked: boolean) => {
+         setFormData(prev => ({
             ...prev,
             [name]: checked
-        } : null);
+        }));
     };
 
     const handleSubmit = (e: React.FormEvent) => {
         e.preventDefault();
-        if (formData) {
-            setError('');
-            setIsLoading(true);
-            // Simulate API call
-            setTimeout(() => {
-                const result = updateProduct(formData);
-                setIsLoading(false);
-                if (result.success) {
-                    navigate(`/inventory/products/${productId}`);
-                } else {
-                    setError(result.message || 'An unknown error occurred.');
-                }
-            }, 500);
+        setError('');
+        setIsLoading(true);
+
+        if (!formData.categoryId) {
+            setError('Please select a category.');
+            setIsLoading(false);
+            return;
         }
+        if (!formData.unitId) {
+            setError('Please select a unit.');
+            setIsLoading(false);
+            return;
+        }
+
+        // Simulate API call
+        setTimeout(() => {
+            const result = addProduct(formData);
+            setIsLoading(false);
+            if (result.success) {
+                navigate(`/inventory/products`);
+            } else {
+                setError(result.message || 'An unknown error occurred.');
+            }
+        }, 500);
     };
 
     return (
         <div>
-            <h1 className="text-3xl font-bold text-white mb-6">Edit: {formData.name}</h1>
+            <h1 className="text-3xl font-bold text-white mb-6">Add New Product</h1>
             <form onSubmit={handleSubmit}>
                 <Card>
                     <CardHeader>
-                        <CardTitle>Edit Product Information</CardTitle>
+                        <CardTitle>Product Information</CardTitle>
                     </CardHeader>
                     <CardContent className="space-y-6">
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
@@ -80,7 +89,7 @@ const EditProductPage: React.FC = () => {
                                 <Input id="name" name="name" value={formData.name} onChange={handleChange} required />
                             </div>
                             <div>
-                                <label htmlFor="sku" className="text-sm font-medium text-slate-300 block mb-2">SKU</label>
+                                <label htmlFor="sku" className="text-sm font-medium text-slate-300 block mb-2">SKU (Stock Keeping Unit)</label>
                                 <Input id="sku" name="sku" value={formData.sku} onChange={handleChange} required />
                             </div>
                             <div>
@@ -92,13 +101,15 @@ const EditProductPage: React.FC = () => {
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                             <div>
                                 <label htmlFor="categoryId" className="text-sm font-medium text-slate-300 block mb-2">Category</label>
-                                <Select id="categoryId" name="categoryId" value={formData.categoryId} onChange={handleChange}>
+                                <Select id="categoryId" name="categoryId" value={formData.categoryId} onChange={handleChange} required>
+                                    <option value="" disabled>Select a category</option>
                                     {categories.map(cat => <option key={cat.id} value={cat.id}>{cat.name}</option>)}
                                 </Select>
                             </div>
                             <div>
                                 <label htmlFor="unitId" className="text-sm font-medium text-slate-300 block mb-2">Unit</label>
-                                <Select id="unitId" name="unitId" value={formData.unitId} onChange={handleChange}>
+                                <Select id="unitId" name="unitId" value={formData.unitId} onChange={handleChange} required>
+                                     <option value="" disabled>Select a unit</option>
                                     {units.map(unit => <option key={unit.id} value={unit.id}>{unit.name}</option>)}
                                 </Select>
                             </div>
@@ -114,11 +125,11 @@ const EditProductPage: React.FC = () => {
                                 <Input id="cost" name="cost" type="number" value={formData.cost} onChange={handleChange} required min="0" step="any" />
                             </div>
                             <div>
-                                <label htmlFor="stock" className="text-sm font-medium text-slate-300 block mb-2">Stock</label>
+                                <label htmlFor="stock" className="text-sm font-medium text-slate-300 block mb-2">Initial Stock</label>
                                 <Input id="stock" name="stock" type="number" value={formData.stock} onChange={handleChange} required min="0" />
                             </div>
                              <div>
-                                <label htmlFor="minStock" className="text-sm font-medium text-slate-300 block mb-2">Min Stock</label>
+                                <label htmlFor="minStock" className="text-sm font-medium text-slate-300 block mb-2">Minimum Stock Alert</label>
                                 <Input id="minStock" name="minStock" type="number" value={formData.minStock} onChange={handleChange} required min="0" />
                             </div>
                         </div>
@@ -129,7 +140,7 @@ const EditProductPage: React.FC = () => {
                                 <label htmlFor="isKitchen" className="text-sm font-medium text-slate-300">Is Kitchen Item?</label>
                             </div>
                             <div className="flex items-center gap-3">
-                                <Switch id="isFnb" checked={formData.isFnb || false} onChange={(c) => handleSwitchChange('isFnb', c)} />
+                                <Switch id="isFnb" checked={formData.isFnb} onChange={(c) => handleSwitchChange('isFnb', c)} />
                                 <label htmlFor="isFnb" className="text-sm font-medium text-slate-300">Is F&B Item? (for Billiards)</label>
                             </div>
                              <div className="flex items-center gap-3">
@@ -140,8 +151,8 @@ const EditProductPage: React.FC = () => {
                     </CardContent>
                     <CardFooter className="flex justify-end gap-2">
                         {error && <p className="text-sm text-red-500 mr-auto">{error}</p>}
-                        <Button type="button" variant="secondary" onClick={() => navigate(`/inventory/products/${productId}`)} disabled={isLoading}>Cancel</Button>
-                        <Button type="submit" disabled={isLoading}>{isLoading ? 'Saving...' : 'Save Changes'}</Button>
+                        <Button type="button" variant="secondary" onClick={() => navigate(`/inventory/products`)} disabled={isLoading}>Cancel</Button>
+                        <Button type="submit" disabled={isLoading}>{isLoading ? 'Creating...' : 'Create Product'}</Button>
                     </CardFooter>
                 </Card>
             </form>
@@ -149,4 +160,4 @@ const EditProductPage: React.FC = () => {
     );
 };
 
-export default EditProductPage;
+export default AddProductPage;

@@ -1,8 +1,9 @@
-
 import React from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useData } from '../../hooks/useData';
 import { Card, CardHeader, CardTitle, CardContent } from '../../components/ui/Card';
+import { Button } from '../../components/ui/Button';
+import { PlusIcon } from '../../components/icons/Icons';
 
 const ProductsPage: React.FC = () => {
   const { products } = useData();
@@ -16,12 +17,15 @@ const ProductsPage: React.FC = () => {
 
   return (
     <div>
-      <h1 className="text-3xl font-bold text-white mb-6">Products</h1>
+      <div className="flex flex-wrap gap-4 justify-between items-center mb-6">
+        <h1 className="text-3xl font-bold text-white">Products</h1>
+        <Button onClick={() => navigate('/inventory/products/new')}>
+            <PlusIcon />
+            <span className="ml-2">Add New Product</span>
+        </Button>
+      </div>
       <Card>
-        <CardHeader>
-          <CardTitle>Product List</CardTitle>
-        </CardHeader>
-        <CardContent>
+        <CardContent className="p-0">
           <div className="overflow-x-auto">
             <table className="w-full text-sm text-left text-slate-400">
               <thead className="text-xs text-slate-300 uppercase bg-slate-800">

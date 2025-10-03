@@ -1,7 +1,6 @@
-
-import React, { createContext, useState, useContext, ReactNode, useCallback, useEffect } from 'react';
-import { Product, Sale, KdsOrder, KdsOrderStatus, Category, Unit, BilliardTable, Session, PricelistPackage, TableStatus, SessionStatus, FnbOrderItem, Outlet, RoundingMethod, PricingUnit } from '../types';
-import { PRODUCTS, initialSales, CATEGORIES, UNITS, BILLIARD_TABLES, PRICELIST_PACKAGES, OUTLETS } from '../constants';
+import React, { createContext, useState, useContext, ReactNode, useCallback, useEffect, useMemo } from 'react';
+import { Product, Sale, KdsOrder, KdsOrderStatus, Category, Unit, BilliardTable, Session, PricelistPackage, TableStatus, SessionStatus, FnbOrderItem, Outlet, RoundingMethod, PricingUnit, Shift, CashMovement, ShiftStatus, CashMovementType, User, PaymentMethod } from '../types';
+import { PRODUCTS, initialSales, CATEGORIES, UNITS, BILLIARD_TABLES, PRICELIST_PACKAGES, OUTLETS, initialShifts, initialCashMovements } from '../constants';
 
 interface DataContextType {
   products: Product[];
@@ -10,13 +9,14 @@ interface DataContextType {
   categories: Category[];
   units: Unit[];
   outlet: Outlet;
-  addSale: (saleData: Omit<Sale, 'id' | 'invoiceNo' | 'date'>) => Sale;
+  addSale: (saleData: Omit<Sale, 'id' | 'invoiceNo' | 'date' | 'shiftId'>) => Sale;
   updateKdsOrderStatus: (orderId: string, status: KdsOrderStatus) => void;
   updateKdsItemStatus: (orderId: string, itemId: string, status: KdsOrderStatus) => void;
   getProductById: (id: string) => Product | undefined;
   getCategoryById: (id: string) => Category | undefined;
   getUnitById: (id: string) => Unit | undefined;
-  updateProduct: (updatedProduct: Product) => void;
+  addProduct: (productData: Omit<Product, 'id'>) => { success: boolean, message?: string };
+  updateProduct: (updatedProduct: Product) => { success: boolean, message?: string };
   addCategory: (name: string) => void;
   updateCategory: (id: string, name: string) => void;
   deleteCategory: (id: string) => { success: boolean; message?: string };
@@ -39,6 +39,15 @@ interface DataContextType {
   resumeBilliardSession: (sessionId: string) => void;
   stopBilliardSession: (sessionId: string) => Session;
   addFnbToSession: (sessionId: string, product: Product, qty: number) => void;
+  // Shifts
+  shifts: Shift[];
+  cashMovements: CashMovement[];
+  activeShift: Shift | null;
+  startShift: (user: User, startCash: number) => Shift;
+  endShift: (endCash: number, notes: string) => Shift;
+  addCashMovement: (type: CashMovementType, amount: number, notes: string) => void;
+  getShiftCashMovements: (shiftId: string) => CashMovement[];
+  getShiftSales: (shiftId: string) => Sale[];
 }
 
 const DataContext = createContext<DataContextType | undefined>(undefined);
@@ -117,6 +126,9 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   const [billiardTables, setBilliardTables] = useState<BilliardTable[]>(BILLIARD_TABLES);
   const [sessions, setSessions] = useState<Session[]>([]);
   const [pricelistPackages, setPricelistPackages] = useState<PricelistPackage[]>(PRICELIST_PACKAGES);
+  // Shift State
+  const [shifts, setShifts] = useState<Shift[]>(initialShifts);
+  const [cashMovements, setCashMovements] = useState<CashMovement[]>(initialCashMovements);
 
   // Billiard Real-time Update Timer
   useEffect(() => {
@@ -134,12 +146,71 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
 
     return () => clearInterval(timer);
   }, []);
+  
+  // Active Shift Memoization
+  const activeShift = useMemo(() => {
+    const openShift = shifts.find(s => s.status === ShiftStatus.OPEN);
+    if (!openShift) return null;
+
+    const shiftSales = sales.filter(sale => sale.shiftId === openShift.id);
+    const shiftMovements = cashMovements.filter(cm => cm.shiftId === openShift.id);
+
+    const cashSales = shiftSales.filter(s => s.paymentMethod === PaymentMethod.CASH).reduce((sum, s) => sum + s.total, 0);
+    const qrisSales = shiftSales.filter(s => s.paymentMethod === PaymentMethod.QRIS).reduce((sum, s) => sum + s.total, 0);
+    const transferSales = shiftSales.filter(s => s.paymentMethod === PaymentMethod.TRANSFER).reduce((sum, s) => sum + s.total, 0);
+    const cashIn = shiftMovements.filter(cm => cm.type === CashMovementType.IN).reduce((sum, cm) => sum + cm.amount, 0);
+    const cashOut = shiftMovements.filter(cm => cm.type === CashMovementType.OUT).reduce((sum, cm) => sum + cm.amount, 0);
+
+    return {
+        ...openShift,
+        cashSales,
+        qrisSales,
+        transferSales,
+        totalSales: cashSales + qrisSales + transferSales,
+        cashIn,
+        cashOut,
+        expectedCash: openShift.startCash + cashSales + cashIn - cashOut,
+    };
+  }, [shifts, sales, cashMovements]);
 
 
   const getProductById = useCallback((id: string) => products.find(p => p.id === id), [products]);
   const getCategoryById = useCallback((id: string) => categories.find(c => c.id === id), [categories]);
   const getUnitById = useCallback((id: string) => units.find(u => u.id === id), [units]);
-  const updateProduct = useCallback((updatedProduct: Product) => setProducts(prev => prev.map(p => p.id === updatedProduct.id ? updatedProduct : p)), []);
+  
+  const addProduct = useCallback((productData: Omit<Product, 'id'>): { success: boolean, message?: string } => {
+    if (products.some(p => p.sku.toLowerCase() === productData.sku.toLowerCase())) {
+      return { success: false, message: 'A product with this SKU already exists.' };
+    }
+    if (products.some(p => p.name.toLowerCase() === productData.name.toLowerCase())) {
+      return { success: false, message: 'A product with this name already exists.' };
+    }
+    if (productData.price < 0 || productData.cost < 0 || productData.stock < 0 || productData.minStock < 0) {
+      return { success: false, message: 'Price, cost, and stock values cannot be negative.' };
+    }
+    if (!categories.some(c => c.id === productData.categoryId)) return { success: false, message: 'Invalid category selected.' };
+    if (!units.some(u => u.id === productData.unitId)) return { success: false, message: 'Invalid unit selected.' };
+
+    const newProduct: Product = { ...productData, id: `prod-${Date.now()}` };
+    setProducts(prev => [...prev, newProduct]);
+    return { success: true };
+  }, [products, categories, units]);
+
+  const updateProduct = useCallback((updatedProduct: Product): { success: boolean, message?: string } => {
+    if (products.some(p => p.id !== updatedProduct.id && p.sku.toLowerCase() === updatedProduct.sku.toLowerCase())) {
+      return { success: false, message: 'A product with this SKU already exists.' };
+    }
+    if (products.some(p => p.id !== updatedProduct.id && p.name.toLowerCase() === updatedProduct.name.toLowerCase())) {
+      return { success: false, message: 'A product with this name already exists.' };
+    }
+    if (updatedProduct.price < 0 || updatedProduct.cost < 0 || updatedProduct.stock < 0 || updatedProduct.minStock < 0) {
+      return { success: false, message: 'Price, cost, and stock values cannot be negative.' };
+    }
+    
+    setProducts(prev => prev.map(p => p.id === updatedProduct.id ? updatedProduct : p));
+    return { success: true };
+  }, [products]);
+
   const addCategory = useCallback((name: string) => setCategories(prev => [...prev, { id: `cat-${Date.now()}`, name }]), []);
   const updateCategory = useCallback((id: string, name: string) => setCategories(prev => prev.map(cat => cat.id === id ? { ...cat, name } : cat)), []);
   const deleteCategory = useCallback((id: string): { success: boolean, message?: string } => {
@@ -159,8 +230,11 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     setOutlet(prev => ({...prev, ...updatedData}));
   }, []);
 
-  const addSale = useCallback((saleData: Omit<Sale, 'id' | 'invoiceNo' | 'date'>): Sale => {
-    const newSale: Sale = { ...saleData, id: `sale-${Date.now()}`, invoiceNo: `INV-${String(sales.length + 1).padStart(4, '0')}`, date: new Date().toISOString() };
+  const addSale = useCallback((saleData: Omit<Sale, 'id' | 'invoiceNo' | 'date' | 'shiftId'>): Sale => {
+    if (!activeShift) {
+        throw new Error("Cannot make a sale without an active shift.");
+    }
+    const newSale: Sale = { ...saleData, id: `sale-${Date.now()}`, invoiceNo: `INV-${String(sales.length + 1).padStart(4, '0')}`, date: new Date().toISOString(), shiftId: activeShift.id };
     setSales(prev => [...prev, newSale]);
     setProducts(prevProducts => {
       const newProducts = [...prevProducts];
@@ -179,7 +253,7 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       setKdsOrders(prev => [...prev, newKdsOrder]);
     }
     return newSale;
-  }, [sales, getProductById]);
+  }, [sales, getProductById, activeShift]);
 
   const updateKdsOrderStatus = useCallback((orderId: string, status: KdsOrderStatus) => setKdsOrders(prev => prev.map(o => o.id === orderId ? { ...o, status, items: o.items.map(i => ({...i, status})) } : o)), []);
   const updateKdsItemStatus = useCallback((orderId: string, itemId: string, status: KdsOrderStatus) => {
@@ -304,8 +378,73 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       }))
   }, []);
 
+  // --- Shift Functions ---
+  const startShift = useCallback((user: User, startCash: number): Shift => {
+    if (activeShift) {
+        throw new Error("Another shift is already active.");
+    }
+    const newShift: Shift = {
+        id: `shift-${Date.now()}`,
+        outletId: user.outletId || 'outlet-1',
+        userId: user.id,
+        userName: user.name,
+        status: ShiftStatus.OPEN,
+        startTime: Date.now(),
+        startCash,
+        cashSales: 0,
+        qrisSales: 0,
+        transferSales: 0,
+        totalSales: 0,
+        cashIn: 0,
+        cashOut: 0,
+        expectedCash: startCash,
+    };
+    setShifts(prev => [...prev, newShift]);
+    return newShift;
+  }, [activeShift]);
+  
+  const endShift = useCallback((endCash: number, notes: string): Shift => {
+    if (!activeShift) {
+        throw new Error("No active shift to end.");
+    }
+    const finalShiftState: Shift = {
+        ...activeShift,
+        status: ShiftStatus.CLOSED,
+        endTime: Date.now(),
+        endCash,
+        notes,
+        difference: endCash - activeShift.expectedCash,
+    };
+    setShifts(prev => prev.map(s => s.id === activeShift.id ? finalShiftState : s));
+    return finalShiftState;
+  }, [activeShift]);
+  
+  const addCashMovement = useCallback((type: CashMovementType, amount: number, notes: string) => {
+    if (!activeShift) {
+        throw new Error("No active shift for cash movement.");
+    }
+    const newMovement: CashMovement = {
+        id: `cm-${Date.now()}`,
+        shiftId: activeShift.id,
+        type,
+        amount,
+        notes,
+        timestamp: Date.now(),
+    };
+    setCashMovements(prev => [...prev, newMovement]);
+  }, [activeShift]);
+
+  const getShiftCashMovements = useCallback((shiftId: string) => {
+    return cashMovements.filter(cm => cm.shiftId === shiftId);
+  }, [cashMovements]);
+
+  const getShiftSales = useCallback((shiftId: string) => {
+    return sales.filter(s => s.shiftId === shiftId);
+  }, [sales]);
+
+
   return (
-    <DataContext.Provider value={{ products, sales, kdsOrders, categories, units, outlet, addSale, updateKdsOrderStatus, updateKdsItemStatus, getProductById, getCategoryById, getUnitById, updateProduct, addCategory, updateCategory, deleteCategory, addUnit, updateUnit, deleteUnit, updateOutlet, billiardTables, sessions, pricelistPackages, addPricelistPackage, updatePricelistPackage, deletePricelistPackage, addBilliardTable, updateBilliardTable, deleteBilliardTable, startBilliardSession, pauseBilliardSession, resumeBilliardSession, stopBilliardSession, addFnbToSession }}>
+    <DataContext.Provider value={{ products, sales, kdsOrders, categories, units, outlet, addSale, updateKdsOrderStatus, updateKdsItemStatus, getProductById, getCategoryById, getUnitById, addProduct, updateProduct, addCategory, updateCategory, deleteCategory, addUnit, updateUnit, deleteUnit, updateOutlet, billiardTables, sessions, pricelistPackages, addPricelistPackage, updatePricelistPackage, deletePricelistPackage, addBilliardTable, updateBilliardTable, deleteBilliardTable, startBilliardSession, pauseBilliardSession, resumeBilliardSession, stopBilliardSession, addFnbToSession, shifts, cashMovements, activeShift, startShift, endShift, addCashMovement, getShiftCashMovements, getShiftSales }}>
       {children}
     </DataContext.Provider>
   );

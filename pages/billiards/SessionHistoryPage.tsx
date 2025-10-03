@@ -2,20 +2,25 @@
 import React, { useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useData } from '../../hooks/useData';
-import { Session, SessionStatus } from '../../types';
+import { Session, SessionStatus, BilliardTableType } from '../../types';
 import { Card, CardHeader, CardTitle, CardContent } from '../../components/ui/Card';
 import { Input } from '../../components/ui/Input';
 import { Button } from '../../components/ui/Button';
+import { Select } from '../../components/ui/Select';
 
 const SessionHistoryPage: React.FC = () => {
-  const { sessions } = useData();
+  const { sessions, billiardTables, pricelistPackages } = useData();
   const navigate = useNavigate();
   
   const today = new Date().toISOString().split('T')[0];
   const [startDate, setStartDate] = useState(today);
   const [endDate, setEndDate] = useState(today);
+  const [selectedTableType, setSelectedTableType] = useState('ALL');
+  const [selectedPackageId, setSelectedPackageId] = useState('ALL');
 
   const filteredSessions = useMemo(() => {
+    const tableTypeMap = new Map(billiardTables.map(t => [t.name, t.tableType]));
+
     const endedSessions = sessions.filter(s => s.status === SessionStatus.ENDED && s.endTime).sort((a, b) => (b.endTime ?? 0) - (a.endTime ?? 0));
 
     if (!startDate || !endDate) return endedSessions;
@@ -29,9 +34,26 @@ const SessionHistoryPage: React.FC = () => {
     return endedSessions.filter(session => {
       if (!session.endTime) return false;
       const sessionEndDate = new Date(session.endTime);
-      return sessionEndDate >= start && sessionEndDate <= end;
+      if(sessionEndDate < start || sessionEndDate > end) {
+        return false;
+      }
+
+      if (selectedTableType !== 'ALL') {
+          const tableType = tableTypeMap.get(session.tableName);
+          if (tableType !== selectedTableType) {
+              return false;
+          }
+      }
+
+      if (selectedPackageId !== 'ALL') {
+          if (session.packageSnapshot.id !== selectedPackageId) {
+              return false;
+          }
+      }
+      
+      return true;
     });
-  }, [sessions, startDate, endDate]);
+  }, [sessions, startDate, endDate, selectedTableType, selectedPackageId, billiardTables]);
 
   const formatCurrency = (amount: number) => new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR', minimumFractionDigits: 0 }).format(amount);
   const formatDateTime = (timestamp: number) => new Date(timestamp).toLocaleString('id-ID', { dateStyle: 'short', timeStyle: 'short' });
@@ -55,9 +77,21 @@ const SessionHistoryPage: React.FC = () => {
           <div className="flex flex-wrap justify-between items-center gap-4">
             <CardTitle>Filter Sessions</CardTitle>
             <div className="flex flex-wrap items-center gap-2 md:gap-4">
-              <Input type="date" value={startDate} onChange={e => setStartDate(e.target.value)} className="w-36"/>
-              <span>to</span>
-              <Input type="date" value={endDate} onChange={e => setEndDate(e.target.value)} className="w-36"/>
+              <Select value={selectedTableType} onChange={e => setSelectedTableType(e.target.value)} className="w-auto md:w-36">
+                  <option value="ALL">All Types</option>
+                  {Object.values(BilliardTableType).map(type => (
+                      <option key={type} value={type}>{type}</option>
+                  ))}
+              </Select>
+              <Select value={selectedPackageId} onChange={e => setSelectedPackageId(e.target.value)} className="w-auto md:w-48">
+                  <option value="ALL">All Packages</option>
+                  {pricelistPackages.map(pkg => (
+                      <option key={pkg.id} value={pkg.id}>{pkg.name}</option>
+                  ))}
+              </Select>
+              <Input type="date" value={startDate} onChange={e => setStartDate(e.target.value)} className="w-auto md:w-36"/>
+              <span className="hidden md:inline">to</span>
+              <Input type="date" value={endDate} onChange={e => setEndDate(e.target.value)} className="w-auto md:w-36"/>
             </div>
           </div>
         </CardHeader>
@@ -67,6 +101,7 @@ const SessionHistoryPage: React.FC = () => {
               <thead className="text-xs text-slate-300 uppercase bg-slate-800">
                 <tr>
                   <th scope="col" className="px-6 py-3">Table</th>
+                  <th scope="col" className="px-6 py-3">Package</th>
                   <th scope="col" className="px-6 py-3">Start Time</th>
                   <th scope="col" className="px-6 py-3">End Time</th>
                   <th scope="col" className="px-6 py-3">Duration</th>
@@ -77,6 +112,7 @@ const SessionHistoryPage: React.FC = () => {
                 {filteredSessions.length > 0 ? filteredSessions.map((session) => (
                   <tr key={session.id} className="border-b border-slate-800 hover:bg-slate-800/50">
                     <td className="px-6 py-4 font-medium text-slate-200">{session.tableName}</td>
+                    <td className="px-6 py-4">{session.packageSnapshot.name}</td>
                     <td className="px-6 py-4">{formatDateTime(session.startTime)}</td>
                     <td className="px-6 py-4">{session.endTime ? formatDateTime(session.endTime) : 'N/A'}</td>
                     <td className="px-6 py-4 font-mono">{formatDuration(session.durationMs)}</td>
@@ -84,7 +120,7 @@ const SessionHistoryPage: React.FC = () => {
                   </tr>
                 )) : (
                   <tr>
-                    <td colSpan={5} className="text-center py-8 text-slate-500">No ended sessions found for the selected period.</td>
+                    <td colSpan={6} className="text-center py-8 text-slate-500">No ended sessions found for the selected period.</td>
                   </tr>
                 )}
               </tbody>

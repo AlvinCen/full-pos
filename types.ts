@@ -1,4 +1,3 @@
-
 export enum UserRole {
   ADMIN = 'ADMIN',
   USER = 'USER'
@@ -107,6 +106,7 @@ export interface Sale {
   id: string;
   outletId: string;
   userId: string;
+  shiftId: string; // Link sale to a shift
   customerId?: string;
   invoiceNo: string;
   date: string;
@@ -225,4 +225,49 @@ export interface Session {
     timeCharge: number;
     fnbCharge: number;
     totalCharge: number;
+}
+
+// --- Cashier Shift Types ---
+
+export enum ShiftStatus {
+  OPEN = 'OPEN',
+  CLOSED = 'CLOSED',
+}
+
+export enum CashMovementType {
+  IN = 'IN',
+  OUT = 'OUT',
+}
+
+export interface CashMovement {
+  id: string;
+  shiftId: string;
+  type: CashMovementType;
+  amount: number;
+  notes: string;
+  timestamp: number;
+}
+
+export interface Shift {
+  id: string;
+  outletId: string;
+  userId: string;
+  userName: string;
+  status: ShiftStatus;
+  startTime: number;
+  endTime?: number;
+  startCash: number;
+  endCash?: number;
+  
+  // Calculated fields
+  cashSales: number;
+  qrisSales: number;
+  transferSales: number;
+  totalSales: number;
+  cashIn: number;
+  cashOut: number;
+  expectedCash: number;
+  difference?: number;
+  
+  notes?: string;
 }

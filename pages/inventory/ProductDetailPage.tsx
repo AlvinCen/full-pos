@@ -63,6 +63,10 @@ const ProductDetailPage: React.FC = () => {
                                 <dd className="mt-1 text-base text-white">{product.isKitchen ? 'Yes' : 'No'}</dd>
                             </div>
                              <div className="border-b border-slate-800 py-2">
+                                <dt className="text-sm font-medium text-slate-400">F&B Item (for Billiards)</dt>
+                                <dd className="mt-1 text-base text-white">{product.isFnb ? 'Yes' : 'No'}</dd>
+                            </div>
+                             <div className="border-b border-slate-800 py-2">
                                 <dt className="text-sm font-medium text-slate-400">Status</dt>
                                 <dd className="mt-1 text-base">
                                      <span className={`px-2 py-1 text-xs font-medium rounded-full ${product.isActive ? 'bg-green-900 text-green-300' : 'bg-red-900 text-red-300'}`}>
