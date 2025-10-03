@@ -1,0 +1,5 @@
+{
+  "name": "POS Frontend System",
+  "description": "A feature-rich frontend prototype for a Point of Sale (POS) system. This application simulates a complete POS workflow including sales, inventory management, a Kitchen Display System (KDS), and reporting, all running client-side with mock data.",
+  "requestFramePermissions": []
+}

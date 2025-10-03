@@ -1,0 +1,318 @@
+
+import React, { createContext, useState, useContext, ReactNode, useCallback, useEffect } from 'react';
+import { Product, Sale, KdsOrder, KdsOrderStatus, Category, Unit, BilliardTable, Session, PricelistPackage, TableStatus, SessionStatus, FnbOrderItem, Outlet, RoundingMethod, PricingUnit } from '../types';
+import { PRODUCTS, initialSales, CATEGORIES, UNITS, BILLIARD_TABLES, PRICELIST_PACKAGES, OUTLETS } from '../constants';
+
+interface DataContextType {
+  products: Product[];
+  sales: Sale[];
+  kdsOrders: KdsOrder[];
+  categories: Category[];
+  units: Unit[];
+  outlet: Outlet;
+  addSale: (saleData: Omit<Sale, 'id' | 'invoiceNo' | 'date'>) => Sale;
+  updateKdsOrderStatus: (orderId: string, status: KdsOrderStatus) => void;
+  updateKdsItemStatus: (orderId: string, itemId: string, status: KdsOrderStatus) => void;
+  getProductById: (id: string) => Product | undefined;
+  getCategoryById: (id: string) => Category | undefined;
+  getUnitById: (id: string) => Unit | undefined;
+  updateProduct: (updatedProduct: Product) => void;
+  addCategory: (name: string) => void;
+  updateCategory: (id: string, name: string) => void;
+  deleteCategory: (id: string) => { success: boolean; message?: string };
+  addUnit: (name: string, precision: number) => void;
+  updateUnit: (id: string, name: string, precision: number) => void;
+  deleteUnit: (id: string) => { success: boolean; message?: string };
+  updateOutlet: (updatedData: Partial<Outlet>) => void;
+  // Billiard
+  billiardTables: BilliardTable[];
+  sessions: Session[];
+  pricelistPackages: PricelistPackage[];
+  addPricelistPackage: (pkg: Omit<PricelistPackage, 'id'>) => void;
+  updatePricelistPackage: (pkg: PricelistPackage) => void;
+  deletePricelistPackage: (id: string) => void;
+  addBilliardTable: (tableData: Omit<BilliardTable, 'id' | 'status' | 'currentSessionId'>) => { success: boolean, message?: string };
+  updateBilliardTable: (table: Omit<BilliardTable, 'status' | 'currentSessionId'>) => { success: boolean, message?: string };
+  deleteBilliardTable: (id: string) => { success: boolean, message?: string };
+  startBilliardSession: (tableId: string, packageId: string) => void;
+  pauseBilliardSession: (sessionId: string) => void;
+  resumeBilliardSession: (sessionId: string) => void;
+  stopBilliardSession: (sessionId: string) => Session;
+  addFnbToSession: (sessionId: string, product: Product, qty: number) => void;
+}
+
+const DataContext = createContext<DataContextType | undefined>(undefined);
+
+const calculateSessionBill = (session: Session, currentTime: number): Partial<Session> => {
+    if (session.status === SessionStatus.ENDED || !session.packageSnapshot) return {};
+
+    const pkg = session.packageSnapshot;
+
+    let currentPauseDuration = 0;
+    if(session.status === SessionStatus.PAUSED && session.pauseTime) {
+        currentPauseDuration = currentTime - session.pauseTime;
+    }
+    const durationMs = currentTime - session.startTime - session.totalPauseDuration - currentPauseDuration;
+    const durationMinutes = Math.max(0, durationMs / 60000);
+
+    let timeCharge = 0;
+    
+    // Apply grace period
+    let billableMinutes = Math.max(0, durationMinutes - pkg.graceMinutes);
+    
+    if (billableMinutes > 0) {
+        // Apply minimum billing time
+        billableMinutes = Math.max(billableMinutes, pkg.minBillMinutes);
+
+        // Apply rounding
+        let roundedMinutes = billableMinutes;
+        switch (pkg.rounding) {
+            case RoundingMethod.UP_5:
+                roundedMinutes = Math.ceil(billableMinutes / 5) * 5;
+                break;
+            case RoundingMethod.UP_10:
+                roundedMinutes = Math.ceil(billableMinutes / 10) * 10;
+                break;
+            case RoundingMethod.UP_15:
+                roundedMinutes = Math.ceil(billableMinutes / 15) * 15;
+                break;
+        }
+
+        // Calculate units based on rounded minutes
+        let billableUnits = 0;
+        switch (pkg.unit) {
+            case PricingUnit.PER_MINUTE:
+                billableUnits = roundedMinutes;
+                break;
+            case PricingUnit.PER_15_MINUTES:
+                billableUnits = roundedMinutes / 15;
+                break;
+            case PricingUnit.PER_HOUR:
+                billableUnits = roundedMinutes / 60;
+                break;
+        }
+        
+        timeCharge = billableUnits * pkg.pricePerUnit;
+    }
+
+    const fnbCharge = session.fnbItems.reduce((acc, item) => acc + item.price * item.qty, 0);
+
+    return {
+        durationMs,
+        timeCharge,
+        fnbCharge,
+        totalCharge: timeCharge + fnbCharge,
+    };
+};
+
+
+export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
+  const [products, setProducts] = useState<Product[]>(PRODUCTS);
+  const [sales, setSales] = useState<Sale[]>(initialSales);
+  const [kdsOrders, setKdsOrders] = useState<KdsOrder[]>([]);
+  const [categories, setCategories] = useState<Category[]>(CATEGORIES);
+  const [units, setUnits] = useState<Unit[]>(UNITS);
+  const [outlet, setOutlet] = useState<Outlet>(OUTLETS[0]);
+  // Billiard State
+  const [billiardTables, setBilliardTables] = useState<BilliardTable[]>(BILLIARD_TABLES);
+  const [sessions, setSessions] = useState<Session[]>([]);
+  const [pricelistPackages, setPricelistPackages] = useState<PricelistPackage[]>(PRICELIST_PACKAGES);
+
+  // Billiard Real-time Update Timer
+  useEffect(() => {
+    const timer = setInterval(() => {
+        const now = Date.now();
+        
+        setSessions(prevSessions => prevSessions.map(session => {
+            if (session.status !== SessionStatus.RUNNING && session.status !== SessionStatus.PAUSED) {
+                return session;
+            }
+            const updatedBill = calculateSessionBill(session, now);
+            return { ...session, ...updatedBill };
+        }));
+    }, 1000); // Update every second
+
+    return () => clearInterval(timer);
+  }, []);
+
+
+  const getProductById = useCallback((id: string) => products.find(p => p.id === id), [products]);
+  const getCategoryById = useCallback((id: string) => categories.find(c => c.id === id), [categories]);
+  const getUnitById = useCallback((id: string) => units.find(u => u.id === id), [units]);
+  const updateProduct = useCallback((updatedProduct: Product) => setProducts(prev => prev.map(p => p.id === updatedProduct.id ? updatedProduct : p)), []);
+  const addCategory = useCallback((name: string) => setCategories(prev => [...prev, { id: `cat-${Date.now()}`, name }]), []);
+  const updateCategory = useCallback((id: string, name: string) => setCategories(prev => prev.map(cat => cat.id === id ? { ...cat, name } : cat)), []);
+  const deleteCategory = useCallback((id: string): { success: boolean, message?: string } => {
+      if (products.some(p => p.categoryId === id)) return { success: false, message: 'Cannot delete category in use.' };
+      setCategories(prev => prev.filter(cat => cat.id !== id));
+      return { success: true };
+  }, [products]);
+  const addUnit = useCallback((name: string, precision: number) => setUnits(prev => [...prev, { id: `unit-${Date.now()}`, name, precision }]), []);
+  const updateUnit = useCallback((id: string, name: string, precision: number) => setUnits(prev => prev.map(u => u.id === id ? { ...u, name, precision } : u)), []);
+  const deleteUnit = useCallback((id: string): { success: boolean, message?: string } => {
+      if (products.some(p => p.unitId === id)) return { success: false, message: 'Cannot delete unit in use.' };
+      setUnits(prev => prev.filter(u => u.id !== id));
+      return { success: true };
+  }, [products]);
+
+  const updateOutlet = useCallback((updatedData: Partial<Outlet>) => {
+    setOutlet(prev => ({...prev, ...updatedData}));
+  }, []);
+
+  const addSale = useCallback((saleData: Omit<Sale, 'id' | 'invoiceNo' | 'date'>): Sale => {
+    const newSale: Sale = { ...saleData, id: `sale-${Date.now()}`, invoiceNo: `INV-${String(sales.length + 1).padStart(4, '0')}`, date: new Date().toISOString() };
+    setSales(prev => [...prev, newSale]);
+    setProducts(prevProducts => {
+      const newProducts = [...prevProducts];
+      newSale.items.forEach(item => {
+        const productIndex = newProducts.findIndex(p => p.id === item.productId);
+        if (productIndex !== -1) newProducts[productIndex].stock -= item.qty;
+      });
+      return newProducts;
+    });
+    const kitchenItems = newSale.items.filter(item => getProductById(item.productId)?.isKitchen);
+    if (kitchenItems.length > 0) {
+      const newKdsOrder: KdsOrder = {
+        id: `kds-${Date.now()}`, saleId: newSale.id, saleInvoiceNo: newSale.invoiceNo, status: KdsOrderStatus.NEW, createdAt: new Date().toISOString(),
+        items: kitchenItems.map(item => ({ id: `kds-item-${item.id}`, kdsOrderId: `kds-${Date.now()}`, productId: item.productId, qty: item.qty, status: KdsOrderStatus.NEW })),
+      };
+      setKdsOrders(prev => [...prev, newKdsOrder]);
+    }
+    return newSale;
+  }, [sales, getProductById]);
+
+  const updateKdsOrderStatus = useCallback((orderId: string, status: KdsOrderStatus) => setKdsOrders(prev => prev.map(o => o.id === orderId ? { ...o, status, items: o.items.map(i => ({...i, status})) } : o)), []);
+  const updateKdsItemStatus = useCallback((orderId: string, itemId: string, status: KdsOrderStatus) => {
+     setKdsOrders(prev => prev.map(o => {
+       if (o.id !== orderId) return o;
+       const newItems = o.items.map(item => item.id === itemId ? { ...item, status } : item);
+       const allReady = newItems.every(i => i.status === KdsOrderStatus.READY);
+       return { ...o, items: newItems, status: allReady ? KdsOrderStatus.READY : o.status };
+     }));
+  }, []);
+
+  // --- Billiard Functions Impl ---
+    const addPricelistPackage = useCallback((pkg: Omit<PricelistPackage, 'id'>) => {
+        const newPackage: PricelistPackage = { ...pkg, id: `pkg-${Date.now()}`};
+        setPricelistPackages(prev => [...prev, newPackage]);
+    }, []);
+    const updatePricelistPackage = useCallback((pkg: PricelistPackage) => {
+        setPricelistPackages(prev => prev.map(p => p.id === pkg.id ? pkg : p));
+    }, []);
+    const deletePricelistPackage = useCallback((id: string) => {
+        setPricelistPackages(prev => prev.filter(p => p.id !== id));
+    }, []);
+
+    const addBilliardTable = useCallback((tableData: Omit<BilliardTable, 'id' | 'status' | 'currentSessionId'>): { success: boolean, message?: string } => {
+        if (billiardTables.some(t => t.name.toLowerCase() === tableData.name.toLowerCase())) {
+            return { success: false, message: 'A table with this name already exists.' };
+        }
+        const newTable: BilliardTable = {
+            ...tableData,
+            id: `table-${Date.now()}`,
+            status: TableStatus.FREE,
+        };
+        setBilliardTables(prev => [...prev, newTable]);
+        return { success: true };
+    }, [billiardTables]);
+    
+    const updateBilliardTable = useCallback((table: Omit<BilliardTable, 'status' | 'currentSessionId'>): { success: boolean, message?: string } => {
+        if (billiardTables.some(t => t.id !== table.id && t.name.toLowerCase() === table.name.toLowerCase())) {
+            return { success: false, message: 'A table with this name already exists.' };
+        }
+        setBilliardTables(prev => prev.map(t => t.id === table.id ? { ...t, ...table } : t));
+        return { success: true };
+    }, [billiardTables]);
+      
+    const deleteBilliardTable = useCallback((id: string): { success: boolean, message?: string } => {
+        const table = billiardTables.find(t => t.id === id);
+        if (table && table.status !== TableStatus.FREE) {
+            return { success: false, message: 'Cannot delete a table that is currently in use.' };
+        }
+        setBilliardTables(prev => prev.filter(t => t.id !== id));
+        return { success: true };
+    }, [billiardTables]);
+
+  const startBilliardSession = useCallback((tableId: string, packageId: string) => {
+    const table = billiardTables.find(t => t.id === tableId);
+    const pkg = pricelistPackages.find(p => p.id === packageId);
+    if (!table || !pkg || table.status !== TableStatus.FREE) return;
+
+    const newSession: Session = {
+        id: `session-${Date.now()}`,
+        tableId,
+        tableName: table.name,
+        startTime: Date.now(),
+        totalPauseDuration: 0,
+        packageSnapshot: { ...pkg },
+        fnbItems: [],
+        status: SessionStatus.RUNNING,
+        durationMs: 0, timeCharge: 0, fnbCharge: 0, totalCharge: 0,
+    };
+    setSessions(prev => [...prev, newSession]);
+    setBilliardTables(prev => prev.map(t => t.id === tableId ? { ...t, status: TableStatus.RUNNING, currentSessionId: newSession.id } : t));
+  }, [billiardTables, pricelistPackages]);
+  
+  const pauseBilliardSession = useCallback((sessionId: string) => {
+      setSessions(prev => prev.map(s => s.id === sessionId && s.status === SessionStatus.RUNNING ? {...s, status: SessionStatus.PAUSED, pauseTime: Date.now()} : s));
+      const session = sessions.find(s => s.id === sessionId);
+      if (session) {
+          setBilliardTables(prev => prev.map(t => t.id === session.tableId ? {...t, status: TableStatus.PAUSED} : t));
+      }
+  }, [sessions]);
+
+  const resumeBilliardSession = useCallback((sessionId: string) => {
+      setSessions(prev => prev.map(s => {
+          if (s.id === sessionId && s.status === SessionStatus.PAUSED && s.pauseTime) {
+              const pauseDuration = Date.now() - s.pauseTime;
+              return { ...s, status: SessionStatus.RUNNING, pauseTime: undefined, totalPauseDuration: s.totalPauseDuration + pauseDuration };
+          }
+          return s;
+      }));
+      const session = sessions.find(s => s.id === sessionId);
+      if(session) {
+          setBilliardTables(prev => prev.map(t => t.id === session.tableId ? {...t, status: TableStatus.RUNNING} : t));
+      }
+  }, [sessions]);
+
+  const stopBilliardSession = useCallback((sessionId: string): Session => {
+      const sessionToEnd = sessions.find(s => s.id === sessionId);
+      if (!sessionToEnd) throw new Error("Session not found");
+
+      const finalBill = calculateSessionBill(sessionToEnd, Date.now());
+
+      const finalSession: Session = { ...sessionToEnd, ...finalBill, status: SessionStatus.ENDED, endTime: Date.now() };
+
+      setSessions(prev => prev.map(s => s.id === sessionId ? finalSession : s));
+      setBilliardTables(prev => prev.map(t => t.id === finalSession.tableId ? { ...t, status: TableStatus.FREE, currentSessionId: undefined } : t));
+      return finalSession;
+  }, [sessions]);
+  
+  const addFnbToSession = useCallback((sessionId: string, product: Product, qty: number) => {
+      setSessions(prev => prev.map(s => {
+          if (s.id !== sessionId) return s;
+          
+          const existingItem = s.fnbItems.find(item => item.productId === product.id);
+          let newFnbItems: FnbOrderItem[];
+
+          if (existingItem) {
+              newFnbItems = s.fnbItems.map(item => item.productId === product.id ? {...item, qty: item.qty + qty} : item);
+          } else {
+              newFnbItems = [...s.fnbItems, { id: `fnb-${Date.now()}`, productId: product.id, name: product.name, qty, price: product.price }];
+          }
+          return { ...s, fnbItems: newFnbItems };
+      }))
+  }, []);
+
+  return (
+    <DataContext.Provider value={{ products, sales, kdsOrders, categories, units, outlet, addSale, updateKdsOrderStatus, updateKdsItemStatus, getProductById, getCategoryById, getUnitById, updateProduct, addCategory, updateCategory, deleteCategory, addUnit, updateUnit, deleteUnit, updateOutlet, billiardTables, sessions, pricelistPackages, addPricelistPackage, updatePricelistPackage, deletePricelistPackage, addBilliardTable, updateBilliardTable, deleteBilliardTable, startBilliardSession, pauseBilliardSession, resumeBilliardSession, stopBilliardSession, addFnbToSession }}>
+      {children}
+    </DataContext.Provider>
+  );
+};
+
+export const useData = (): DataContextType => {
+  const context = useContext(DataContext);
+  if (context === undefined) throw new Error('useData must be used within a DataProvider');
+  return context;
+};
